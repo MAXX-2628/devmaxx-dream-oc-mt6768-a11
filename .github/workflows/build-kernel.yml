@@ -1,0 +1,103 @@
+name: Build Kernel with KernelSU
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Device to build
+        type: choice
+        options:
+          - lancelot
+          - merlin
+        default: lancelot
+
+jobs:
+  build:
+    name: Build kernel for ${{ github.event.inputs.device }}
+    runs-on: ubuntu-22.04
+    env:
+      DEVICE: ${{ github.event.inputs.device || 'lancelot' }}
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: shas-noc
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison ca-certificates cpio curl file flex git make \
+            libssl-dev libncurses-dev xz-utils zlib1g-dev \
+            device-tree-compiler perl python3 zip unzip \
+            libc6-dev-i386 lib32ncurses5-dev lib32z1 lib32stdc++6
+
+      - name: Download toolchains
+        run: |
+          mkdir -p /root/clang-llvm
+          mkdir -p /root/gcc64-aosp
+          mkdir -p /root/gcc32-aosp
+          cd /root
+
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr3-release/clang-r383902b1.tar.gz
+          tar -C clang-llvm/ -xzf clang-r383902b1.tar.gz
+
+          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-11.0.0_r35.tar.gz
+          tar -C gcc64-aosp/ -xzf android-11.0.0_r35.tar.gz
+
+          wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-11.0.0_r34.tar.gz
+          tar -C gcc32-aosp/ -xzf android-11.0.0_r34.tar.gz
+
+          ls /root/clang-llvm/bin | head -5
+
+      - name: Integrate KernelSU v0.9.5
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
+          ls drivers/kernelsu/
+
+      - name: Enable KernelSU in defconfig
+        run: |
+          echo "# KernelSU" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "CONFIG_KSU=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -E "^(CONFIG_KPROBES|CONFIG_HAVE_KPROBES|CONFIG_KPROBE_EVENTS)" arch/arm64/configs/${DEVICE}_defconfig || echo "KPROBES not in defconfig (will try enabling below)"
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="/root/clang-llvm/bin:/root/gcc64-aosp/bin:/root/gcc32-aosp/bin:$PATH"
+          export DTC_EXT=dtc
+
+          make O=out ARCH=arm64 ${DEVICE}_defconfig
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            LD=ld.lld \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy
+
+      - name: Package AnyKernel3
+        run: |
+          IMAGE=out/arch/arm64/boot/Image.gz-dtb
+          if [ -f "$IMAGE" ]; then
+            cd AnyKernel3-master
+            rm -f *.zip *-dtb
+            cp ../$IMAGE Image.gz-dtb
+            DATE=$(date "+%Y%m%d-%H%M")
+            ZIPNAME="Shas-Dream-KSU-${DEVICE}-A11"
+            zip -r9 "$ZIPNAME-${DATE}.zip" .
+            echo "ZIP_FILE=AnyKernel3-master/$ZIPNAME-${DATE}.zip" >> $GITHUB_ENV
+          else
+            echo "Kernel image not found!"
+            exit 1
+          fi
+
+      - name: Upload flashable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shas-Dream-KSU-${{ env.DEVICE }}-A11
+          path: AnyKernel3-master/*.zip
