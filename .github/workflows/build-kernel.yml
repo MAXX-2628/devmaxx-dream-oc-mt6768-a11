@@ -71,6 +71,20 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
           ls drivers/kernelsu/
 
+      - name: Patch KernelSU-Next legacy for 4.14 kprobe mode
+        run: |
+          python3 - <<'EOF'
+          import re
+          p = "drivers/kernelsu/feature/selinux_hide.c"
+          s = open(p).read()
+          old = "\twhile (READ_ONCE(ksu_input_hook))\n\t\tmsleep(5000);\n"
+          new = "#if !defined(CONFIG_KSU_KPROBES_HOOK)\n\twhile (READ_ONCE(ksu_input_hook))\n\t\tmsleep(5000);\n#endif\n"
+          assert old in s, "selinux_hide.c pattern not found"
+          open(p, "w").write(s.replace(old, new))
+          print("patched selinux_hide.c")
+          EOF
+          grep -n "KSU_KPROBES_HOOK" drivers/kernelsu/feature/selinux_hide.c
+
       - name: Enable KernelSU-Next in defconfig
         run: |
           echo "# KernelSU-Next" >> arch/arm64/configs/${DEVICE}_defconfig
