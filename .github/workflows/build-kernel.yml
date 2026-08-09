@@ -35,10 +35,10 @@ jobs:
 
       - name: Download toolchains
         run: |
-          mkdir -p /root/clang-llvm
-          mkdir -p /root/gcc64-aosp
-          mkdir -p /root/gcc32-aosp
-          cd /root
+          mkdir -p $GITHUB_WORKSPACE/toolchains/clang-llvm
+          mkdir -p $GITHUB_WORKSPACE/toolchains/gcc64-aosp
+          mkdir -p $GITHUB_WORKSPACE/toolchains/gcc32-aosp
+          cd $GITHUB_WORKSPACE/toolchains
 
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr3-release/clang-r383902b1.tar.gz
           tar -C clang-llvm/ -xzf clang-r383902b1.tar.gz
@@ -49,7 +49,8 @@ jobs:
           wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/tags/android-11.0.0_r34.tar.gz
           tar -C gcc32-aosp/ -xzf android-11.0.0_r34.tar.gz
 
-          ls /root/clang-llvm/bin | head -5
+          echo "TOOLCHAINS=$GITHUB_WORKSPACE/toolchains" >> $GITHUB_ENV
+          ls $GITHUB_WORKSPACE/toolchains/clang-llvm/bin | head -5
 
       - name: Integrate KernelSU v0.9.5
         run: |
@@ -66,7 +67,7 @@ jobs:
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH="/root/clang-llvm/bin:/root/gcc64-aosp/bin:/root/gcc32-aosp/bin:$PATH"
+          export PATH="$TOOLCHAINS/clang-llvm/bin:$TOOLCHAINS/gcc64-aosp/bin:$TOOLCHAINS/gcc32-aosp/bin:$PATH"
           export DTC_EXT=dtc
 
           make O=out ARCH=arm64 ${DEVICE}_defconfig
