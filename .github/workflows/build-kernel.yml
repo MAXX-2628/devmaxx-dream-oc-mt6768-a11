@@ -79,6 +79,8 @@ jobs:
           grep -q "^CONFIG_HAVE_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
           grep -q "^CONFIG_KRETPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KRETPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
           grep -q "^CONFIG_KPROBE_EVENTS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "# KASLR must be off: kprobes execute undefined instructions on MTK 4.14 with KASLR (last_kmsg: do_undefinstr in kernel_init)" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "# CONFIG_RANDOMIZE_BASE is not set" >> arch/arm64/configs/${DEVICE}_defconfig
           tail -8 arch/arm64/configs/${DEVICE}_defconfig
 
       - name: Build kernel
