@@ -396,6 +396,70 @@ Our 6th hook (`drivers/input/input.c`) is what enables this. And because we use 
 - Toolchains: AOSP Clang `clang-r450784d`, GCC 4.9 android-11 prebuilts
 - Crash logs: MediaTek `CONFIG_PSTORE_RAM` / `CONFIG_MTK_RAM_CONSOLE` (`/proc/last_kmsg`)
 
+## susfs (branch `shas-susfs` only)
+
+This branch adds [susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu) (branch
+`kernel-4.14`) on top of the proven `shas-noc` recipe above: KSU stays pinned
+at **v0.9.5** with kprobes off and the same 6 manual hooks, plus SELinux
+domain-spoofing (zygote/init/ksu SID games), sus_path/sus_mount/sus_kstat
+hiding, and uname/cmdline spoofing.
+
+### Why two extra patches are hand-adapted, not stock
+
+Neither of susfs's two kernel patches applies cleanly here, so this repo
+carries adapted copies under `susfs/patches/` and the CI workflow always
+uses those (never fetches patches from GitLab at build time):
+
+- `10_enable_susfs_for_ksu-v095.patch` - the stock patch targets KSU's
+  post-v1.0 non-GKI-dropped source layout; on v0.9.5 it needs 3 hand fixes
+  (the `escape_to_root`/`setup_selinux` renames plus the susfs SELinux SID
+  helper block in `kernel/selinux/selinux.c`).
+- `50_add_susfs_in_kernel-4.14-mtk.patch` - the stock patch targets vanilla
+  4.14; this MTK tree has extra vendor code (an F2FS fake-version override in
+  `kernel/sys.c`, an IN_ALL_EVENTS mask calc in `fs/notify/fdinfo.c`, and a
+  missing `is_pid` parameter on `show_map_vma` in `fs/proc/task_mmu.c`) that
+  shifts the patch context in 3 places. Both were re-verified with
+  `git apply --check` on a fresh KSU v0.9.5 clone / a synthetic tree built
+  from the 21 stock files, respectively - clean applies, no `.rej`.
+
+### Installing
+
+1. Flash the kernel zip from this branch's CI artifact (`Shas-Dream-KSU-<device>-A11`) exactly like the `shas-noc` build - **unzip TWICE**, same as before.
+2. Flash the `susfs-module-<device>` artifact zip as a KernelSU module (KSU
+   Manager -> Modules -> Install from storage), then reboot. This installs
+   the `ksu_susfs` CLI tool and `service.sh` automation from
+   `susfs/ksu_module_susfs/`.
+
+### Per-app / dynamic permissive
+
+There is no `set_permissive` verb in the susfs tool - permissive toggling is
+a KernelSU App Profile setting, not a susfs one:
+
+KSU Manager -> tap the target app under Superuser -> App Profile -> toggle
+**SELinux: Permissive** for that app's domain only. Everything else stays
+enforcing. Susfs's job is orthogonal: hiding the su/module/mount footprint
+from whichever apps you've granted root or profiled, via the SID games and
+path/mount/kstat hiding above.
+
+### Verifying susfs from adb shell
+
+```sh
+# from a root shell (adb shell su)
+ksu_susfs add_sus_path /data/adb/modules
+ksu_susfs add_sus_mount /data/adb/modules
+ksu_susfs add_sus_kstat_statically /data/adb/ksu /data/system 0 0 755
+```
+
+See `susfs/ksu_module_susfs/README.md` (`ksu_susfs/jni/main.c` upstream) for
+the full command list: `add_sus_path`, `add_sus_mount`,
+`add_sus_kstat_statically`, `add_sus_kstat`, `update_sus_kstat`,
+`update_sus_kstat_full_clone`, `add_try_umount`.
+
+### Safe mode still works
+
+Volume-Down x3 during boot still forces KSU safe mode (all root features off)
+exactly as on `shas-noc` - susfs doesn't touch that hook.
+
 ## License
 
 Kernel code under GPLv2 (upstream). See COPYING.
