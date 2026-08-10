@@ -44,8 +44,6 @@ jobs:
           sudo make install >/dev/null
           sudo ln -sf /usr/local/bin/python2.7 /usr/bin/python2
           sudo ln -sf /usr/local/bin/python2.7 /usr/bin/python
-          python2 --version
-          python --version
 
       - name: Download toolchains
         run: |
@@ -54,8 +52,8 @@ jobs:
           mkdir -p $GITHUB_WORKSPACE/toolchains/gcc32-aosp
           cd $GITHUB_WORKSPACE/toolchains
 
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr3-release/clang-r383902b1.tar.gz
-          tar -C clang-llvm/ -xzf clang-r383902b1.tar.gz
+          wget -q https://github.com/kdrag0n/proton-clang/archive/refs/tags/14.0.tar.gz
+          tar -C clang-llvm/ --strip-components=1 -xzf 14.0.tar.gz
 
           wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/tags/android-11.0.0_r35.tar.gz
           tar -C gcc64-aosp/ -xzf android-11.0.0_r35.tar.gz
@@ -64,37 +62,17 @@ jobs:
           tar -C gcc32-aosp/ -xzf android-11.0.0_r34.tar.gz
 
           echo "TOOLCHAINS=$GITHUB_WORKSPACE/toolchains" >> $GITHUB_ENV
-          ls $GITHUB_WORKSPACE/toolchains/clang-llvm/bin | head -5
+          $GITHUB_WORKSPACE/toolchains/clang-llvm/bin/clang --version | head -3
 
-      - name: Integrate KernelSU-Next (legacy)
+      - name: Integrate KernelSU v0.9.5
         run: |
-          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/legacy/kernel/setup.sh" | bash -s legacy
+          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
           ls drivers/kernelsu/
 
-      - name: Patch KernelSU-Next legacy for 4.14 kprobe mode
+      - name: Enable KernelSU in defconfig
         run: |
-          python3 - <<'EOF'
-          import re
-          p = "drivers/kernelsu/feature/selinux_hide.c"
-          s = open(p).read()
-          old = "\twhile (READ_ONCE(ksu_input_hook))\n\t\tmsleep(5000);\n"
-          new = "#if !defined(CONFIG_KSU_KPROBES_HOOK)\n\twhile (READ_ONCE(ksu_input_hook))\n\t\tmsleep(5000);\n#endif\n"
-          assert old in s, "selinux_hide.c pattern not found"
-          open(p, "w").write(s.replace(old, new))
-          print("patched selinux_hide.c")
-          EOF
-          grep -n "KSU_KPROBES_HOOK" drivers/kernelsu/feature/selinux_hide.c
-
-      - name: Enable KernelSU-Next in defconfig
-        run: |
-          echo "# KernelSU-Next" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "# KernelSU" >> arch/arm64/configs/${DEVICE}_defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_HAVE_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KRETPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KRETPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KPROBE_EVENTS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_MODULES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_MODULES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KSU_KPROBES_HOOK=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KSU_KPROBES_HOOK=y" >> arch/arm64/configs/${DEVICE}_defconfig
 
       - name: Build kernel
         run: |
