@@ -73,6 +73,13 @@ jobs:
         run: |
           echo "# KernelSU" >> arch/arm64/configs/${DEVICE}_defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "# KernelSU requires kprobes for sucompat/ksud hooks" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -q "^CONFIG_KALLSYMS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -q "^CONFIG_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -q "^CONFIG_HAVE_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -q "^CONFIG_KRETPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KRETPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          grep -q "^CONFIG_KPROBE_EVENTS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/${DEVICE}_defconfig
+          tail -8 arch/arm64/configs/${DEVICE}_defconfig
 
       - name: Build kernel
         run: |
