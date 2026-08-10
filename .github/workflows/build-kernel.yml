@@ -69,19 +69,134 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/v0.9.5/kernel/setup.sh" | bash -s v0.9.5
           ls drivers/kernelsu/
 
-      - name: Enable KernelSU in defconfig
+      - name: Enable KernelSU in defconfig (manual hook mode, NO kprobes)
         run: |
-          echo "# KernelSU" >> arch/arm64/configs/${DEVICE}_defconfig
+          # KPROBES is BROKEN on this MTK 4.14 kernel (bootloop: do_undefinstr /
+          # IABT in kprobe path during kernel_init). Official v0.9.5 non-GKI
+          # integration: CONFIG_KSU=y + manual source hooks, kprobes OFF.
+          # With !KPROBES, KSU_MANUAL_HOOK defaults to y automatically
+          # (drivers/kernelsu/Kconfig: "default y if !KPROBES").
+          echo "# KernelSU (manual hook mode)" >> arch/arm64/configs/${DEVICE}_defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          echo "# KernelSU requires kprobes for sucompat/ksud hooks" >> arch/arm64/configs/${DEVICE}_defconfig
+          echo "# CONFIG_KPROBES is not set" >> arch/arm64/configs/${DEVICE}_defconfig
           grep -q "^CONFIG_KALLSYMS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_HAVE_KPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KRETPROBES=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KRETPROBES=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          grep -q "^CONFIG_KPROBE_EVENTS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KPROBE_EVENTS=y" >> arch/arm64/configs/${DEVICE}_defconfig
-          echo "# KASLR must be off: kprobes execute undefined instructions on MTK 4.14 with KASLR (last_kmsg: do_undefinstr in kernel_init)" >> arch/arm64/configs/${DEVICE}_defconfig
-          echo "# CONFIG_RANDOMIZE_BASE is not set" >> arch/arm64/configs/${DEVICE}_defconfig
-          tail -8 arch/arm64/configs/${DEVICE}_defconfig
+          tail -6 arch/arm64/configs/${DEVICE}_defconfig
+
+      - name: Apply KernelSU manual hooks to kernel source
+        run: |
+          python3 << 'EOF'
+          import re, sys
+
+          def patch(path, fn_pat, extern_block, hook_block, label):
+              with open(path, encoding='utf-8') as f:
+                  src = f.read()
+              m = re.search(fn_pat, src, re.S)
+              if not m:
+                  print(f"[FAIL] {label}: marker not found in {path}")
+                  sys.exit(1)
+              tail_before = src[max(0, m.start()-300):m.start()]
+              if '#ifdef CONFIG_KSU' in tail_before:
+                  print(f"[SKIP] {label}: already patched")
+                  return
+              src = src[:m.end()] + hook_block + src[m.end():]
+              src = src[:m.start()] + extern_block + src[m.start():]
+              with open(path, 'w', encoding='utf-8') as f:
+                  f.write(src)
+              print(f"[OK] {label}")
+
+          # 1) fs/exec.c - do_execveat_common -> ksu_handle_execveat (+sucompat)
+          patch("fs/exec.c",
+                r"static int do_execveat_common\(int fd, struct filename \*filename,\n\s*struct user_arg_ptr argv,\n\s*struct user_arg_ptr envp,\n\s*int flags\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern bool ksu_execveat_hook __read_mostly;
+          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv,
+                          void *envp, int *flags);
+          extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr,
+                           void *argv, void *envp, int *flags);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tif (unlikely(ksu_execveat_hook))
+          \t\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+          \telse
+          \t\tksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
+          #endif
+          ''',
+                "exec.c/do_execveat_common")
+
+          # 2) fs/open.c - faccessat syscall (no do_faccessat in this 4.14 source)
+          patch("fs/open.c",
+                r"SYSCALL_DEFINE3\(faccessat, int, dfd, const char __user \*, filename, int, mode\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user,
+                          int *mode, int *flags);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+          #endif
+          ''',
+                "open.c/faccessat")
+
+          # 3) fs/read_write.c - vfs_read (injects ksud.rc into atrace.rc at boot)
+          patch("fs/read_write.c",
+                r"ssize_t vfs_read\(struct file \*file, char __user \*buf, size_t count, loff_t \*pos\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern bool ksu_vfs_read_hook __read_mostly;
+          extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr,
+                          size_t *count_ptr, loff_t **pos);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tif (unlikely(ksu_vfs_read_hook))
+          \t\tksu_handle_vfs_read(&file, &buf, &count, &pos);
+          #endif
+          ''',
+                "read_write.c/vfs_read")
+
+          # 4) fs/stat.c - vfs_statx (newfstatat -> su path hiding)
+          patch("fs/stat.c",
+                r"int vfs_statx\(int dfd, const char __user \*filename, int flags,\n\s*struct kstat \*stat, u32 request_mask\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tksu_handle_stat(&dfd, &filename, &flags);
+          #endif
+          ''',
+                "stat.c/vfs_statx")
+
+          # 5) fs/devpts/inode.c - devpts_get_priv (fixes "Failed to execute pm")
+          patch("fs/devpts/inode.c",
+                r"void \*devpts_get_priv\(struct dentry \*dentry\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern int ksu_handle_devpts(struct inode*);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tksu_handle_devpts(dentry->d_inode);
+          #endif
+          ''',
+                "devpts/inode.c")
+
+          # 6) drivers/input/input.c - input_handle_event (KernelSU safe mode)
+          patch("drivers/input/input.c",
+                r"static void input_handle_event\(struct input_dev \*dev,\n\s*unsigned int type, unsigned int code, int value\)\n\{\n",
+                '''#ifdef CONFIG_KSU
+          extern bool ksu_input_hook __read_mostly;
+          extern int ksu_handle_input_handle_event(unsigned int *type, unsigned int *code, int *value);
+          #endif
+          ''',
+                '''#ifdef CONFIG_KSU
+          \tif (unlikely(ksu_input_hook))
+          \t\tksu_handle_input_handle_event(&type, &code, &value);
+          #endif
+          ''',
+                "input.c/input_handle_event")
+
+          print("All manual hooks applied.")
+          EOF
 
       - name: Build kernel
         run: |
