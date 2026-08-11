@@ -487,3 +487,11 @@ CONFIG_SW_SYNC64=y
 # PSI - pressure stall information (kernel/sched/psi.c exists in this
 # tree but was never enabled; standalone, no cgroups dependency)
 CONFIG_PSI=y
+
+# CGROUPS + MEMCG - full memory cgroup accounting, needed for proper
+# per-process/per-group memory pressure awareness on top of PSI.
+# MEMCG depends on CGROUPS (init/Kconfig, if CGROUPS...endif block).
+# MEMCG_SWAP needs MEMCG + SWAP (available via zram already).
+CONFIG_CGROUPS=y
+CONFIG_MEMCG=y
+CONFIG_MEMCG_SWAP=y
