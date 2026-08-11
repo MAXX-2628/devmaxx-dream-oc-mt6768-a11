@@ -488,19 +488,14 @@ CONFIG_SW_SYNC64=y
 # tree but was never enabled; standalone, no cgroups dependency)
 CONFIG_PSI=y
 
-# CGROUPS + MEMCG - kept enabled (2026-08-11) after user reported
-# battery drain/warmth with the first CGROUPS+MEMCG+MEMCG_SWAP build.
-# Instead of removing it: MEMCG_SWAP_ENABLED is explicitly OFF below,
-# which disables swap accounting (memcg's historically most expensive
-# part - it double-tracks pages as they move between RAM and zram) by
-# default at boot, while still compiling the capability in. Can be
-# turned on later via the swapaccount=1 boot cmdline if ever needed,
-# with no further rebuild required. Base MEMCG (RAM-only accounting)
-# stays fully active.
-CONFIG_CGROUPS=y
-CONFIG_MEMCG=y
-CONFIG_MEMCG_SWAP=y
-# CONFIG_MEMCG_SWAP_ENABLED is not set
+# CGROUPS + MEMCG tried 2026-08-11 (full, then swap-accounting-disabled
+# variants). Both caused real, reproducible regressions - battery drain,
+# device warmth, and on the swap-disabled variant additionally UI lag,
+# worse (not just unfixed) 1080p playback, and heat buildup while
+# charging. Base memcg's per-page accounting overhead (not just the swap
+# sub-feature) appears to be the real cost on this SoC. Fully reverted -
+# not re-attempting without a materially different approach. See
+# SUSFS-HANDOFF.md 13.5/13.7.
 
 # CMA - contiguous memory allocator. The shared MTK video codec driver
 # (drivers/media/platform/mtk-vcodec/mtk_vcodec_util.c) allocates decode
