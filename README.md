@@ -500,6 +500,29 @@ hand-patched) is published at
 [MAXX-2628/ReZygisk-KernelSU release v1.0.0-ksu095-1](https://github.com/MAXX-2628/ReZygisk-KernelSU/releases/tag/v1.0.0-ksu095-1) -
 use that instead of the stock release on this kernel.
 
+### Is this kernel overclocked? No - here's the actual investigation
+
+Traced the MT6768 CPU frequency selection path directly
+(`drivers/misc/mediatek/base/power/cpufreq_v1/src/mach/mt6768/mtk_cpufreq_platform.c`,
+`_mt_cpufreq_get_cpu_level()`): the OPP table is chosen at runtime from a
+hardware efuse read (the SoC's factory-programmed segment code), not a
+kernel config choice. A boosted "PRO"/"PRO_v7" OPP table does exist in the
+header (2202MHz), which is worth being suspicious of - but the actual
+selection function's `if/else` chain only ever assigns the standard levels;
+PRO is unreachable dead code regardless of what the efuse reports. Governor
+is `schedutil` (not `performance`), no max-freq override in the defconfig.
+Ceiling actually reachable: **2000MHz big cluster / 1700MHz little
+cluster** - this is the chip's genuine stock spec for this SoC, not
+something inflated by this kernel.
+
+If you're still seeing more heat/battery drain than expected, it's more
+likely the extra background load from root + susfs + any Zygisk modules
+than the clock ceiling - but `cpu-control.zip` (flashable module, this
+branch) is provided as an **optional, fully reversible** way to cap below
+stock anyway if you want that tradeoff: edit `MAX_FREQ_BIG`/`MAX_FREQ_LITTLE`
+in its `service.sh` before flashing (defaults are the stock values = no-op),
+or just uninstall the module via KSU Manager to instantly revert.
+
 ## License
 
 Kernel code under GPLv2 (upstream). See COPYING.
