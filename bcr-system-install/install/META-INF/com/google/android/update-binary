@@ -88,9 +88,11 @@ ui_print "- Using system partition at $SYSTEM_DIR"
 
 # -P forces POSIX output (one line per fs, fixed column order) so this
 # works consistently across busybox/toybox/coreutils df variants.
+# Real requirement is ~5.2MB (the apk) + a tiny xml file; 8MB is a
+# reasonable safety margin above that, not an arbitrary round number.
 AVAIL=$(df -P "$SYSTEM_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
-if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 20000 ] 2>/dev/null; then
-  abort_rollback "Not enough free space on $SYSTEM_DIR (need ~20MB free, have ${AVAIL}KB)"
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 8000 ] 2>/dev/null; then
+  abort_rollback "Not enough free space on $SYSTEM_DIR (need ~8MB free, have ${AVAIL}KB)"
 fi
 if [ -z "$AVAIL" ]; then
   ui_print "- Warning: could not determine free space, proceeding anyway"
