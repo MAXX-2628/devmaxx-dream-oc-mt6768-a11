@@ -1,5 +1,7 @@
 #!/sbin/sh
 # BCR system uninstaller - removes the files the BCR system installer added.
+# Uses the same real-system-partition detection as the installer (see its
+# comments for why plain "/system" is wrong on system-as-root devices).
 
 OUTFD=$2
 
@@ -10,30 +12,57 @@ ui_print() {
 
 ui_print "- BCR system uninstaller (com.chiller3.bcr)"
 
-mount /system 2>/dev/null
-mount -o rw,remount /system 2>/dev/null
-if [ ! -w /system ]; then
-  ui_print "! Cannot mount /system read-write"
+SYSTEM_MNT=/system
+if [ -d /system_root ]; then
+  SYSTEM_MNT=/system_root
+fi
+
+mount "$SYSTEM_MNT" 2>/dev/null
+mount -o rw,remount "$SYSTEM_MNT" 2>/dev/null
+
+if [ ! -w "$SYSTEM_MNT" ]; then
+  DEV=$(readlink -f /dev/block/mapper/system 2>/dev/null)
+  if [ -n "$DEV" ]; then
+    umount "$SYSTEM_MNT" 2>/dev/null
+    mount -t ext4 -o rw "$DEV" "$SYSTEM_MNT" 2>/dev/null
+  fi
+fi
+
+if [ -e "$SYSTEM_MNT/system/build.prop" ]; then
+  SYSTEM_DIR="$SYSTEM_MNT/system"
+elif [ -e "$SYSTEM_MNT/build.prop" ]; then
+  SYSTEM_DIR="$SYSTEM_MNT"
+else
+  SYSTEM_DIR=""
+fi
+
+if [ ! -w "$SYSTEM_MNT" ] || [ -z "$SYSTEM_DIR" ]; then
+  ui_print "! Cannot find/mount the real system partition read-write (tried $SYSTEM_MNT)"
   exit 1
 fi
 
-if [ -f /system/priv-app/com.chiller3.bcr/app-release.apk ]; then
-  rm -f /system/priv-app/com.chiller3.bcr/app-release.apk
+ui_print "- Using system partition at $SYSTEM_DIR"
+
+APP_DIR="$SYSTEM_DIR/priv-app/com.chiller3.bcr"
+PERMS_FILE="$SYSTEM_DIR/etc/permissions/privapp-permissions-com.chiller3.bcr.xml"
+
+if [ -f "$APP_DIR/app-release.apk" ]; then
+  rm -f "$APP_DIR/app-release.apk"
   ui_print "- Removed app-release.apk"
 fi
 
-if [ -d /system/priv-app/com.chiller3.bcr ]; then
-  rmdir /system/priv-app/com.chiller3.bcr 2>/dev/null
+if [ -d "$APP_DIR" ]; then
+  rmdir "$APP_DIR" 2>/dev/null
 fi
 
-if [ -f /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml ]; then
-  rm -f /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml
+if [ -f "$PERMS_FILE" ]; then
+  rm -f "$PERMS_FILE"
   ui_print "- Removed privapp-permissions xml"
 fi
 
-ui_print "- BCR removed from /system"
+ui_print "- BCR removed from system partition"
 ui_print "- Reboot to finish"
 
-mount -o ro,remount /system 2>/dev/null
+mount -o ro,remount "$SYSTEM_MNT" 2>/dev/null
 
 exit 0
