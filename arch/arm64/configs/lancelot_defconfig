@@ -477,10 +477,7 @@ CONFIG_SW_SYNC64=y
 # tree but was never enabled; standalone, no cgroups dependency)
 CONFIG_PSI=y
 
-# CGROUPS + MEMCG - full memory cgroup accounting, needed for proper
-# per-process/per-group memory pressure awareness on top of PSI.
-# MEMCG depends on CGROUPS (init/Kconfig, if CGROUPS...endif block).
-# MEMCG_SWAP needs MEMCG + SWAP (available via zram already).
-CONFIG_CGROUPS=y
-CONFIG_MEMCG=y
-CONFIG_MEMCG_SWAP=y
+# CGROUPS + MEMCG tried 2026-08-11: compiled clean, but user reported
+# battery drain + device warmth after flashing (consistent with memcg's
+# known accounting overhead being real on this SoC). Reverted, keeping
+# PSI (confirmed smooth, no downside). See SUSFS-HANDOFF.md 13.3.
