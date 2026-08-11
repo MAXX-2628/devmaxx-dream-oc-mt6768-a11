@@ -490,3 +490,15 @@ CONFIG_CGROUPS=y
 CONFIG_MEMCG=y
 CONFIG_MEMCG_SWAP=y
 # CONFIG_MEMCG_SWAP_ENABLED is not set
+
+# CMA - contiguous memory allocator. The shared MTK video codec driver
+# (drivers/media/platform/mtk-vcodec/mtk_vcodec_util.c) allocates decode
+# buffers via dma_alloc_coherent(); without CMA that has to find genuinely
+# contiguous physical memory the hard way, which gets less reliable as
+# memory fragments over uptime - a plausible cause of cross-app 1080p
+# playback stutter (YouTube/VLC/Instagram all go through this same path).
+# 32MB region: reserved for DMA use but not wasted when idle - CMA lets
+# the rest of the system use it as regular movable memory otherwise.
+CONFIG_CMA=y
+CONFIG_DMA_CMA=y
+CONFIG_CMA_SIZE_MBYTES=32
