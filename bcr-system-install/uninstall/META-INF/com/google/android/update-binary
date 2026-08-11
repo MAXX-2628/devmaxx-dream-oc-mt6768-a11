@@ -1,0 +1,39 @@
+#!/sbin/sh
+# BCR system uninstaller - removes the files the BCR system installer added.
+
+OUTFD=$2
+
+ui_print() {
+  echo "ui_print $1" >&$OUTFD
+  echo "ui_print" >&$OUTFD
+}
+
+ui_print "- BCR system uninstaller (com.chiller3.bcr)"
+
+mount /system 2>/dev/null
+mount -o rw,remount /system 2>/dev/null
+if [ ! -w /system ]; then
+  ui_print "! Cannot mount /system read-write"
+  exit 1
+fi
+
+if [ -f /system/priv-app/com.chiller3.bcr/app-release.apk ]; then
+  rm -f /system/priv-app/com.chiller3.bcr/app-release.apk
+  ui_print "- Removed app-release.apk"
+fi
+
+if [ -d /system/priv-app/com.chiller3.bcr ]; then
+  rmdir /system/priv-app/com.chiller3.bcr 2>/dev/null
+fi
+
+if [ -f /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml ]; then
+  rm -f /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml
+  ui_print "- Removed privapp-permissions xml"
+fi
+
+ui_print "- BCR removed from /system"
+ui_print "- Reboot to finish"
+
+mount -o ro,remount /system 2>/dev/null
+
+exit 0
