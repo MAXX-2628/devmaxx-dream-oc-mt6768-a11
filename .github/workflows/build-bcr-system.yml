@@ -1,0 +1,72 @@
+name: Build BCR System Install/Uninstall zips
+
+on:
+  workflow_dispatch:
+    inputs:
+      bcr_version:
+        description: BCR release tag to pull (upstream chenxiaolong/BCR)
+        type: string
+        default: v3.6
+
+jobs:
+  build:
+    name: Build BCR system-install zips
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download official BCR release
+        run: |
+          set -e
+          VER="${{ github.event.inputs.bcr_version || 'v3.6' }}"
+          curl -LSs -o bcr-release.zip \
+            "https://github.com/chenxiaolong/BCR/releases/download/${VER}/BCR-${VER#v}-release.zip"
+          unzip -l bcr-release.zip
+
+      - name: Extract BCR apk + privapp-permissions xml
+        run: |
+          set -e
+          mkdir -p extracted
+          unzip -o bcr-release.zip \
+            "system/priv-app/com.chiller3.bcr/app-release.apk" \
+            "system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml" \
+            -d extracted
+          find extracted -type f
+
+      - name: Assemble install zip
+        run: |
+          set -e
+          rm -rf build-install
+          cp -r bcr-system-install/install build-install
+          cp "extracted/system/priv-app/com.chiller3.bcr/app-release.apk" build-install/app-release.apk
+          cp "extracted/system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml" build-install/privapp-permissions-com.chiller3.bcr.xml
+          chmod +x build-install/META-INF/com/google/android/update-binary
+          cd build-install
+          zip -r9 "../BCR-System-Install.zip" . -x '.*'
+          cd ..
+          unzip -l BCR-System-Install.zip
+
+      - name: Assemble uninstall zip
+        run: |
+          set -e
+          rm -rf build-uninstall
+          cp -r bcr-system-install/uninstall build-uninstall
+          chmod +x build-uninstall/META-INF/com/google/android/update-binary
+          cd build-uninstall
+          zip -r9 "../BCR-System-Uninstall.zip" . -x '.*'
+          cd ..
+          unzip -l BCR-System-Uninstall.zip
+
+      - name: Upload install zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: BCR-System-Install
+          path: BCR-System-Install.zip
+
+      - name: Upload uninstall zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: BCR-System-Uninstall
+          path: BCR-System-Uninstall.zip
