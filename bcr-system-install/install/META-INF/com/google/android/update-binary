@@ -1,11 +1,18 @@
 #!/sbin/sh
-# BCR system installer - writes BCR directly into /system/priv-app so it
-# works as a real privileged system app, independent of KernelSU/modules.
+# BCR system installer - writes BCR directly into the real system partition's
+# priv-app so it works as a genuine privileged system app, independent of
+# KernelSU/modules.
+#
+# IMPORTANT: on system-as-root devices, recovery's own "/system" is its OWN
+# internal filesystem (fox.cfg, bash.bashrc, etc) - NOT the phone's actual
+# Android system partition. The real one mounts separately, conventionally
+# at /system_root. This script detects and uses the correct one rather than
+# assuming plain "/system".
 #
 # Safety: every file/dir this script creates is tracked as it goes. If ANY
 # step fails (mount, space check, extract, copy, chmod, chcon), everything
-# tracked so far is deleted immediately and the script exits - /system is
-# never left in a half-modified state.
+# tracked so far is deleted immediately and the script exits - the system
+# partition is never left in a half-modified state.
 
 OUTFD=$2
 ZIPFILE=$3
@@ -29,7 +36,7 @@ rollback() {
   for d in $CREATED_DIRS; do
     [ -d "$d" ] && rmdir "$d" 2>/dev/null
   done
-  ui_print "- Rollback complete, /system unchanged"
+  ui_print "- Rollback complete, system partition unchanged"
 }
 
 abort_rollback() {
@@ -40,22 +47,53 @@ abort_rollback() {
 
 ui_print "- BCR system installer (com.chiller3.bcr)"
 
-mount /system 2>/dev/null
-mount -o rw,remount /system 2>/dev/null
-if [ ! -w /system ]; then
-  abort_rollback "Cannot mount /system read-write"
+# Find the real Android system partition mount point. Prefer /system_root
+# (system-as-root convention) if it exists as a directory; verify it's
+# actually the real thing by checking for a known real-system marker
+# (build.prop) after mounting, falling back to plain /system otherwise.
+SYSTEM_MNT=/system
+if [ -d /system_root ]; then
+  SYSTEM_MNT=/system_root
 fi
 
+mount "$SYSTEM_MNT" 2>/dev/null
+mount -o rw,remount "$SYSTEM_MNT" 2>/dev/null
+
+if [ ! -w "$SYSTEM_MNT" ]; then
+  DEV=$(readlink -f /dev/block/mapper/system 2>/dev/null)
+  if [ -n "$DEV" ]; then
+    umount "$SYSTEM_MNT" 2>/dev/null
+    mount -t ext4 -o rw "$DEV" "$SYSTEM_MNT" 2>/dev/null
+  fi
+fi
+
+# On system-as-root devices (like this one), the real content is nested
+# under $SYSTEM_MNT/system/ (build.prop, priv-app, etc all live there) -
+# $SYSTEM_MNT itself is more like the device's root filesystem view. On a
+# plain (non-system-as-root) layout it'd be directly at $SYSTEM_MNT. Detect
+# which one this device actually is rather than assuming.
+if [ -e "$SYSTEM_MNT/system/build.prop" ]; then
+  SYSTEM_DIR="$SYSTEM_MNT/system"
+elif [ -e "$SYSTEM_MNT/build.prop" ]; then
+  SYSTEM_DIR="$SYSTEM_MNT"
+else
+  SYSTEM_DIR=""
+fi
+
+if [ ! -w "$SYSTEM_MNT" ] || [ -z "$SYSTEM_DIR" ]; then
+  abort_rollback "Cannot find/mount the real system partition read-write (tried $SYSTEM_MNT)"
+fi
+
+ui_print "- Using system partition at $SYSTEM_DIR"
+
 # -P forces POSIX output (one line per fs, fixed column order) so this
-# works consistently across busybox/toybox/coreutils df variants, which
-# otherwise format columns differently - especially on dynamic-partition
-# devices where /system is a logical (device-mapper) mount.
-AVAIL=$(df -P /system 2>/dev/null | awk 'NR==2 {print $4}')
+# works consistently across busybox/toybox/coreutils df variants.
+AVAIL=$(df -P "$SYSTEM_DIR" 2>/dev/null | awk 'NR==2 {print $4}')
 if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 20000 ] 2>/dev/null; then
-  abort_rollback "Not enough free space on /system (need ~20MB free, have ${AVAIL}KB)"
+  abort_rollback "Not enough free space on $SYSTEM_DIR (need ~20MB free, have ${AVAIL}KB)"
 fi
 if [ -z "$AVAIL" ]; then
-  ui_print "- Warning: could not determine free space on /system, proceeding anyway"
+  ui_print "- Warning: could not determine free space, proceeding anyway"
   ui_print "- (the copy steps below still safely abort+rollback if they actually run out of space)"
 fi
 
@@ -73,34 +111,41 @@ if [ ! -f "$WORKDIR/privapp-permissions-com.chiller3.bcr.xml" ]; then
   abort_rollback "privapp-permissions xml missing from zip"
 fi
 
-if [ ! -d /system/priv-app/com.chiller3.bcr ]; then
-  mkdir -p /system/priv-app/com.chiller3.bcr || abort_rollback "mkdir /system/priv-app/com.chiller3.bcr failed"
-  track_dir /system/priv-app/com.chiller3.bcr
+APP_DIR="$SYSTEM_DIR/priv-app/com.chiller3.bcr"
+PERMS_DIR="$SYSTEM_DIR/etc/permissions"
+
+if [ ! -d "$APP_DIR" ]; then
+  mkdir -p "$APP_DIR" || abort_rollback "mkdir $APP_DIR failed"
+  track_dir "$APP_DIR"
 fi
 
-cp "$WORKDIR/app-release.apk" /system/priv-app/com.chiller3.bcr/app-release.apk \
+if [ ! -d "$PERMS_DIR" ]; then
+  mkdir -p "$PERMS_DIR" || abort_rollback "mkdir $PERMS_DIR failed"
+  track_dir "$PERMS_DIR"
+fi
+
+cp "$WORKDIR/app-release.apk" "$APP_DIR/app-release.apk" \
   || abort_rollback "copy app-release.apk failed"
-track_file /system/priv-app/com.chiller3.bcr/app-release.apk
+track_file "$APP_DIR/app-release.apk"
 
-cp "$WORKDIR/privapp-permissions-com.chiller3.bcr.xml" /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml \
+cp "$WORKDIR/privapp-permissions-com.chiller3.bcr.xml" "$PERMS_DIR/privapp-permissions-com.chiller3.bcr.xml" \
   || abort_rollback "copy privapp-permissions xml failed"
-track_file /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml
+track_file "$PERMS_DIR/privapp-permissions-com.chiller3.bcr.xml"
 
-chmod 0644 /system/priv-app/com.chiller3.bcr/app-release.apk \
-           /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml \
+chmod 0644 "$APP_DIR/app-release.apk" "$PERMS_DIR/privapp-permissions-com.chiller3.bcr.xml" \
   || abort_rollback "chmod failed"
-chmod 0755 /system/priv-app/com.chiller3.bcr \
+chmod 0755 "$APP_DIR" \
   || abort_rollback "chmod dir failed"
 
-chcon u:object_r:system_file:s0 /system/priv-app/com.chiller3.bcr 2>/dev/null
-chcon u:object_r:system_file:s0 /system/priv-app/com.chiller3.bcr/app-release.apk 2>/dev/null
-chcon u:object_r:system_file:s0 /system/etc/permissions/privapp-permissions-com.chiller3.bcr.xml 2>/dev/null
+chcon u:object_r:system_file:s0 "$APP_DIR" 2>/dev/null
+chcon u:object_r:system_file:s0 "$APP_DIR/app-release.apk" 2>/dev/null
+chcon u:object_r:system_file:s0 "$PERMS_DIR/privapp-permissions-com.chiller3.bcr.xml" 2>/dev/null
 
 rm -rf "$WORKDIR"
 
-ui_print "- BCR installed to /system/priv-app successfully"
+ui_print "- BCR installed successfully"
 ui_print "- Reboot to finish"
 
-mount -o ro,remount /system 2>/dev/null
+mount -o ro,remount "$SYSTEM_MNT" 2>/dev/null
 
 exit 0
