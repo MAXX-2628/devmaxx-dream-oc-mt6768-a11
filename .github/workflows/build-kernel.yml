@@ -280,7 +280,9 @@ jobs:
             CROSS_COMPILE_ARM32=arm-linux-androideabi- \
             LD=ld.lld \
             NM=llvm-nm \
-            OBJCOPY=llvm-objcopy
+            OBJCOPY=llvm-objcopy \
+            KSU_EXPECTED_SIZE=0x0374 \
+            KSU_EXPECTED_HASH=96a902c4e19f34fa1bb857390a957980c921a8253a0a637addfabc95b0552d21
 
       - name: Package AnyKernel3
         run: |
