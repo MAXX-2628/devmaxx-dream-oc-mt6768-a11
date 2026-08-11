@@ -1,6 +1,8 @@
 <div align="center">
 
-# ðŸ“± shas-dream-oc-mt6768-a11 â€” NOC Kernel
+# 📱 shas-dream-oc-mt6768-a11 — NOC Kernel
+
+### by dev-maxx, for J💗K
 
 ### The Story of a Kernel That Wouldn't Let Us Have Root
 
