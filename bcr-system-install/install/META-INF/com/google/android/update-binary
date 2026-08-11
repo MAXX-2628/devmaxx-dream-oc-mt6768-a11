@@ -46,9 +46,17 @@ if [ ! -w /system ]; then
   abort_rollback "Cannot mount /system read-write"
 fi
 
-AVAIL=$(df /system 2>/dev/null | tail -1 | awk '{print $4}')
-if [ -z "$AVAIL" ] || [ "$AVAIL" -lt 20000 ]; then
-  abort_rollback "Not enough free space on /system (need ~20MB free, have ${AVAIL:-unknown}KB)"
+# -P forces POSIX output (one line per fs, fixed column order) so this
+# works consistently across busybox/toybox/coreutils df variants, which
+# otherwise format columns differently - especially on dynamic-partition
+# devices where /system is a logical (device-mapper) mount.
+AVAIL=$(df -P /system 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -n "$AVAIL" ] && [ "$AVAIL" -lt 20000 ] 2>/dev/null; then
+  abort_rollback "Not enough free space on /system (need ~20MB free, have ${AVAIL}KB)"
+fi
+if [ -z "$AVAIL" ]; then
+  ui_print "- Warning: could not determine free space on /system, proceeding anyway"
+  ui_print "- (the copy steps below still safely abort+rollback if they actually run out of space)"
 fi
 
 WORKDIR=/tmp/bcr_install
