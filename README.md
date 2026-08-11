@@ -460,6 +460,44 @@ the full command list: `add_sus_path`, `add_sus_mount`,
 Volume-Down x3 during boot still forces KSU safe mode (all root features off)
 exactly as on `shas-noc` - susfs doesn't touch that hook.
 
+### Rebranded manager (Device Sync)
+
+`manager-rebrand/DeviceSync-v0.9.5.apk` on this branch is a repackaged copy
+of the stock v0.9.5 manager APK - renamed to `com.deviceutil.sync` / "Device
+Sync" (package, app label, launcher/webui activities, custom permission),
+re-signed with a dedicated keystore - because some banking apps fingerprint
+the stock KernelSU manager via `PackageManager` component scanning even when
+susfs hides the rest of the root footprint. The kernel build's
+`KSU_EXPECTED_SIZE`/`KSU_EXPECTED_HASH` (in `build-kernel.yml`) are set to
+this APK's certificate, so the kernel only trusts this rebranded manager, not
+the stock one.
+
+Two gotchas if you ever need to redo this rebrand yourself:
+- KernelSU identifies its manager purely by **APK signature**, not package
+  name (`kernel/apk_sign.c`) - renaming the package/label is safe on its own.
+- The compiled `libkernelsu.so` exports its JNI functions name-mangled with
+  the **Java package** the `Natives` class lives in
+  (`Java_me_weishu_kernelsu_Natives_becomeManager` etc). Renaming that one
+  class's package breaks root (`UnsatisfiedLinkError`) unless you also
+  recompile the native lib from source. Since `Natives` isn't declared in
+  `AndroidManifest.xml`, the working fix is to leave just that class (and its
+  `Natives$Profile` inner class) under `me.weishu.kernelsu` while rebranding
+  everything manifest-visible (Application, Activities, FileProvider, the
+  custom `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`) - PackageManager scans
+  never see the untouched class, so detection stays defeated either way.
+
+### Known-good companion module: ReZygisk
+
+Stock [ReZygisk](https://github.com/PerformanC/ReZygisk) v1.0.0 fails to
+install on KSU v0.9.5 with `Unable to apply SELinux patches! Your kernel may
+not support SELinux patch fully` - **this is not a kernel/susfs bug.** Root
+cause: v0.9.5's `ksud sepolicy check` parser doesn't skip `#`-comment lines
+in `sepolicy.rule`, and upstream's file has them (written for newer KSU
+parsers). Fixed build (comments stripped, natively rebuilt from source, not
+hand-patched) is published at
+[MAXX-2628/ReZygisk-KernelSU release v1.0.0-ksu095-1](https://github.com/MAXX-2628/ReZygisk-KernelSU/releases/tag/v1.0.0-ksu095-1) -
+use that instead of the stock release on this kernel.
+
 ## License
 
 Kernel code under GPLv2 (upstream). See COPYING.
