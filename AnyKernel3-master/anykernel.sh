@@ -4,7 +4,7 @@
 ## AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=Shas Dream Project
+kernel.string=Shas Dream Project by dev-maxx for J💗K
 do.devicecheck=0
 do.modules=0
 do.systemless=1
