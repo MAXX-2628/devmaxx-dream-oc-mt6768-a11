@@ -483,3 +483,7 @@ CONFIG_DEFAULT_DEADLINE=y
 CONFIG_MTK_SLBC=y
 CONFIG_MTK_SLBC_MMSRAM=y
 CONFIG_SW_SYNC64=y
+
+# PSI - pressure stall information (kernel/sched/psi.c exists in this
+# tree but was never enabled; standalone, no cgroups dependency)
+CONFIG_PSI=y
