@@ -139,6 +139,15 @@ int susfs_auto_add_sus_bind_mount(const char *pathname, struct path *path_target
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
 void susfs_auto_add_sus_ksu_default_mount(const char __user *to_pathname);
 #endif // #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+/*
+ * Called from KernelSU-Next's own kernel/setuid_hook.c, externed and
+ * called there under CONFIG_KSU_SUSFS_SUS_MOUNT (confirmed directly
+ * against the real setuid_hook.c source at v3.1.0-legacy-susfs) -- NOT
+ * CONFIG_KSU_SUSFS_TRY_UMOUNT, which is a separate, independently
+ * toggleable flag. Documented no-op, see fs/susfs.c (Task 9, round 5
+ * review fix; originally added under the wrong guard in round 4).
+ */
+void susfs_reorder_mnt_id(void);
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 /* sus_kstat */
@@ -211,12 +220,5 @@ void susfs_show_variant(void __user **user_info);
 void susfs_show_version(void __user **user_info);
 /* susfs_init */
 void susfs_init(void);
-/*
- * Called from KernelSU-Next's own setuid_hook.c after all sus mounts are
- * umounted for a transitioning process. No reference implementation exists
- * in any available susfs4ksu branch for this KernelSU-Next generation --
- * documented no-op, see fs/susfs.c (Task 9, round 4 link-fix).
- */
-void susfs_reorder_mnt_id(void);
 
 #endif
