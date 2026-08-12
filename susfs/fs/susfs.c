@@ -20,7 +20,7 @@ static spinlock_t susfs_spin_lock;
 
 extern bool susfs_is_current_ksu_domain(void);
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-extern void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid);
+extern void try_umount(const char *mnt, int flags);
 #endif
 
 #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
@@ -562,14 +562,36 @@ void susfs_try_umount(uid_t target_uid) {
 	// We should umount in reversed order
 	list_for_each_entry_reverse(cursor, &LH_TRY_UMOUNT_PATH, list) {
 		if (cursor->info.mnt_mode == TRY_UMOUNT_DEFAULT) {
-			ksu_try_umount(cursor->info.target_pathname, false, 0, target_uid);
+			try_umount(cursor->info.target_pathname, 0);
 		} else if (cursor->info.mnt_mode == TRY_UMOUNT_DETACH) {
-			ksu_try_umount(cursor->info.target_pathname, false, MNT_DETACH, target_uid);
+			try_umount(cursor->info.target_pathname, MNT_DETACH);
 		} else {
 			SUSFS_LOGE("failed umounting '%s' for uid: %d, mnt_mode '%d' not supported\n",
 							cursor->info.target_pathname, target_uid, cursor->info.mnt_mode);
 		}
 	}
+}
+
+/*
+ * Thin alias -- KernelSU-Next's fs/namespace.c (added by
+ * 50_add_susfs_in_kernel-4.14-mtk.patch) calls susfs_try_umount_all(uid),
+ * a naming-only difference from our susfs_try_umount(uid). Same semantics,
+ * no reimplementation needed (Task 9, round 4 link-fix).
+ */
+void susfs_try_umount_all(uid_t uid) {
+	susfs_try_umount(uid);
+}
+
+/*
+ * No-op: no reference implementation exists in any available susfs4ksu
+ * branch (checked kernel-4.14, kernel-5.4, master, gki-android12-5.10) for
+ * this KernelSU-Next generation's susfs_reorder_mnt_id(), called from
+ * setuid_hook.c after all sus mounts are umounted. mnt_id gaps left behind
+ * after umount are harmless -- mnt_id is only used as an identifier
+ * (e.g. DEFAULT_SUS_MNT_ID comparisons), not required to stay contiguous
+ * for correctness (Task 9, round 4 link-fix).
+ */
+void susfs_reorder_mnt_id(void) {
 }
 
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
