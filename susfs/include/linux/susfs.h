@@ -143,14 +143,25 @@ void susfs_auto_add_sus_ksu_default_mount(const char __user *to_pathname);
 
 /* sus_kstat */
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
-int susfs_update_sus_kstat(struct st_susfs_sus_kstat* __user user_info);
+/*
+ * Task 9 fix (run 31584682068): KernelSU-Next v3.1.0-legacy-susfs's
+ * kernel/supercalls.c calls every susfs ioctl handler as fn(arg), where
+ * arg is uniformly typed void __user **, not the single struct pointer
+ * our vendored (older) susfs4ksu source expected. Signature changed from
+ * struct st_susfs_sus_kstat* __user to void __user ** to match the
+ * caller; body dereferences *user_info. Same change applied below to
+ * susfs_add_try_umount, susfs_set_uname, susfs_set_cmdline_or_bootconfig
+ * -- the other 4 call sites that hit this exact
+ * -Werror,-Wincompatible-pointer-types error in that run's log.
+ */
+int susfs_add_sus_kstat(void __user **user_info);
+int susfs_update_sus_kstat(void __user **user_info);
 void susfs_sus_ino_for_generic_fillattr(unsigned long ino, struct kstat *stat);
 void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
 #endif
 /* try_umount */
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-int susfs_add_try_umount(struct st_susfs_try_umount* __user user_info);
+int susfs_add_try_umount(void __user **user_info);
 void susfs_try_umount(uid_t target_uid);
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
 void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
@@ -158,7 +169,7 @@ void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
 #endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-int susfs_set_uname(struct st_susfs_uname* __user user_info);
+int susfs_set_uname(void __user **user_info);
 void susfs_spoof_uname(struct new_utsname* tmp);
 #endif
 /* set_log */
@@ -167,7 +178,7 @@ void susfs_set_log(bool enabled);
 #endif
 /* spoof_cmdline_or_bootconfig */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-int susfs_set_cmdline_or_bootconfig(char* __user user_fake_boot_config);
+int susfs_set_cmdline_or_bootconfig(void __user **user_fake_boot_config);
 int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);
 #endif
 /* open_redirect */
