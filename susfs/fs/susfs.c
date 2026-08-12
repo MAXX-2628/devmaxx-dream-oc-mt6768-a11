@@ -339,14 +339,14 @@ static int susfs_update_sus_kstat_inode(char *target_pathname) {
 	return 0;
 }
 
-int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info) {
+int susfs_add_sus_kstat(void __user **user_info) {
 	struct st_susfs_sus_kstat info;
 	struct st_susfs_sus_kstat_hlist *new_entry, *tmp_entry;
 	struct hlist_node *tmp_node;
 	int bkt;
 	bool update_hlist = false;
 
-	if (copy_from_user(&info, user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
 		return 1;
 	}
@@ -434,14 +434,14 @@ int susfs_add_sus_kstat(struct st_susfs_sus_kstat* __user user_info) {
 	return 0;
 }
 
-int susfs_update_sus_kstat(struct st_susfs_sus_kstat* __user user_info) {
+int susfs_update_sus_kstat(void __user **user_info) {
 	struct st_susfs_sus_kstat info;
 	struct st_susfs_sus_kstat_hlist *new_entry, *tmp_entry;
 	struct hlist_node *tmp_node;
 	int bkt;
 	int err = 0;
 
-	if (copy_from_user(&info, user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
 		return 1;
 	}
@@ -523,12 +523,12 @@ void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned 
 /* try_umount */
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 static LIST_HEAD(LH_TRY_UMOUNT_PATH);
-int susfs_add_try_umount(struct st_susfs_try_umount* __user user_info) {
+int susfs_add_try_umount(void __user **user_info) {
 	struct st_susfs_try_umount_list *cursor = NULL, *temp = NULL;
 	struct st_susfs_try_umount_list *new_list = NULL;
 	struct st_susfs_try_umount info;
 
-	if (copy_from_user(&info, user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_try_umount __user*)*user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
 		return 1;
 	}
@@ -659,10 +659,10 @@ static void susfs_my_uname_init(void) {
 	memset(&my_uname, 0, sizeof(my_uname));
 }
 
-int susfs_set_uname(struct st_susfs_uname* __user user_info) {
+int susfs_set_uname(void __user **user_info) {
 	struct st_susfs_uname info;
 
-	if (copy_from_user(&info, user_info, sizeof(struct st_susfs_uname))) {
+	if (copy_from_user(&info, (struct st_susfs_uname __user*)*user_info, sizeof(struct st_susfs_uname))) {
 		SUSFS_LOGE("failed copying from userspace.\n");
 		return 1;
 	}
@@ -709,7 +709,7 @@ void susfs_set_log(bool enabled) {
 /* spoof_cmdline_or_bootconfig */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 static char *fake_cmdline_or_bootconfig = NULL;
-int susfs_set_cmdline_or_bootconfig(char* __user user_fake_cmdline_or_bootconfig) {
+int susfs_set_cmdline_or_bootconfig(void __user **user_fake_cmdline_or_bootconfig) {
 	int res;
 
 	if (!fake_cmdline_or_bootconfig) {
@@ -723,7 +723,7 @@ int susfs_set_cmdline_or_bootconfig(char* __user user_fake_cmdline_or_bootconfig
 
 	spin_lock(&susfs_spin_lock);
 	memset(fake_cmdline_or_bootconfig, 0, SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE);
-	res = strncpy_from_user(fake_cmdline_or_bootconfig, user_fake_cmdline_or_bootconfig, SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE-1);
+	res = strncpy_from_user(fake_cmdline_or_bootconfig, (const char __user*)*user_fake_cmdline_or_bootconfig, SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE-1);
 	spin_unlock(&susfs_spin_lock);
 
 	if (res > 0) {
