@@ -901,6 +901,109 @@ out:
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_SU
 
+/*
+ * The 5 functions below (Task 9 fix, run 31582626614) are called
+ * unconditionally by KernelSU-Next v3.1.0-legacy-susfs's
+ * kernel/supercalls.c whenever CONFIG_KSU_SUSFS=y -- our vendored
+ * susfs4ksu kernel-4.14 source (frozen 2025-02-23) predates this KSU-Next
+ * tag and never implemented them. Adapted from susfs4ksu's
+ * gki-android12-5.10 branch (closest available reference with real
+ * implementations), but rewritten to use this file's own plain
+ * `bool xxx __read_mostly` global convention (see susfs_is_log_enabled
+ * above) instead of the reference's static_branch/jump-label pattern,
+ * which nothing else in this file uses.
+ *
+ * Known gap: susfs_is_hide_sus_mnts_for_non_su_procs_enabled is set here
+ * but not read/checked anywhere else in this file or in
+ * 50_add_susfs_in_kernel-4.14-mtk.patch (verified by grep) -- this
+ * kernel has no enforcement wired up for the "hide sus mounts from
+ * non-su processes" refinement. The command is accepted and reports
+ * success, but has no behavioral effect. Base SUS_MOUNT hiding (which IS
+ * fully implemented) is unaffected. This mirrors Task 3's already
+ * documented susfs_add_sus_mount gap -- an honest pre-existing capability
+ * gap in the vendored source, not something introduced by this fix.
+ */
+bool susfs_is_hide_sus_mnts_for_non_su_procs_enabled __read_mostly = false;
+bool susfs_is_avc_log_spoofing_enabled __read_mostly = false;
+
+void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info) {
+	struct st_susfs_hide_sus_mnts_for_non_su_procs info = {0};
+
+	if (copy_from_user(&info, (struct st_susfs_hide_sus_mnts_for_non_su_procs __user*)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+	susfs_is_hide_sus_mnts_for_non_su_procs_enabled = info.enabled;
+	SUSFS_LOGI("susfs_is_hide_sus_mnts_for_non_su_procs_enabled: %d\n", susfs_is_hide_sus_mnts_for_non_su_procs_enabled);
+	info.err = 0;
+out_copy_to_user:
+	if (copy_to_user((struct st_susfs_hide_sus_mnts_for_non_su_procs __user*)*user_info, &info, sizeof(info))) {
+		info.err = -EFAULT;
+	}
+}
+
+void susfs_set_avc_log_spoofing(void __user **user_info) {
+	struct st_susfs_avc_log_spoofing info = {0};
+
+	if (copy_from_user(&info, (struct st_susfs_avc_log_spoofing __user*)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+	susfs_is_avc_log_spoofing_enabled = info.enabled;
+	SUSFS_LOGI("susfs_is_avc_log_spoofing_enabled: %d\n", susfs_is_avc_log_spoofing_enabled);
+	info.err = 0;
+out_copy_to_user:
+	if (copy_to_user((struct st_susfs_avc_log_spoofing __user*)*user_info, &info, sizeof(info))) {
+		info.err = -EFAULT;
+	}
+}
+
+void susfs_show_variant(void __user **user_info) {
+	struct st_susfs_variant info = {0};
+	strscpy(info.susfs_variant, SUSFS_VARIANT, sizeof(info.susfs_variant) - 1);
+	info.err = 0;
+	if (copy_to_user((struct st_susfs_variant __user*)*user_info, &info, sizeof(info))) {
+		info.err = -EFAULT;
+	}
+}
+
+void susfs_show_version(void __user **user_info) {
+	struct st_susfs_version info = {0};
+	strscpy(info.susfs_version, SUSFS_VERSION, sizeof(info.susfs_version) - 1);
+	info.err = 0;
+	if (copy_to_user((struct st_susfs_version __user*)*user_info, &info, sizeof(info))) {
+		info.err = -EFAULT;
+	}
+}
+
+void susfs_get_enabled_features(void __user **user_info) {
+	struct st_susfs_enabled_features info = {0};
+	size_t len = 0;
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_MOUNT\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_KSTAT\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_TRY_UMOUNT\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n");
+#endif
+	info.err = 0;
+	if (copy_to_user((struct st_susfs_enabled_features __user*)*user_info, &info, sizeof(info))) {
+		info.err = -EFAULT;
+	}
+}
+
 /* susfs_init */
 void susfs_init(void) {
 	spin_lock_init(&susfs_spin_lock);
