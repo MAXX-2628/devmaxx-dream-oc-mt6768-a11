@@ -582,18 +582,6 @@ void susfs_try_umount_all(uid_t uid) {
 	susfs_try_umount(uid);
 }
 
-/*
- * No-op: no reference implementation exists in any available susfs4ksu
- * branch (checked kernel-4.14, kernel-5.4, master, gki-android12-5.10) for
- * this KernelSU-Next generation's susfs_reorder_mnt_id(), called from
- * setuid_hook.c after all sus mounts are umounted. mnt_id gaps left behind
- * after umount are harmless -- mnt_id is only used as an identifier
- * (e.g. DEFAULT_SUS_MNT_ID comparisons), not required to stay contiguous
- * for correctness (Task 9, round 4 link-fix).
- */
-void susfs_reorder_mnt_id(void) {
-}
-
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
 void susfs_auto_add_try_umount_for_bind_mount(struct path *path) {
 	struct st_susfs_try_umount_list *cursor = NULL, *temp = NULL;
@@ -672,6 +660,34 @@ out_free_pathname:
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
 #endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+
+/* reorder_mnt_id */
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+/*
+ * Called from KernelSU-Next's own kernel/setuid_hook.c after all sus
+ * mounts are umounted for a transitioning process -- externed and called
+ * there under CONFIG_KSU_SUSFS_SUS_MOUNT, not CONFIG_KSU_SUSFS_TRY_UMOUNT
+ * (confirmed directly against the real setuid_hook.c source at
+ * v3.1.0-legacy-susfs; this function must therefore be defined here
+ * whenever SUS_MOUNT is on, independent of whether TRY_UMOUNT also is --
+ * a build with SUS_MOUNT=y/TRY_UMOUNT=n would otherwise hit the exact
+ * "undefined symbol: susfs_reorder_mnt_id" link error again).
+ *
+ * No-op: no reference implementation exists in any available susfs4ksu
+ * branch (checked kernel-4.14, kernel-5.4, master, gki-android12-5.10) for
+ * this KernelSU-Next generation's susfs_reorder_mnt_id(). Confirmed safe
+ * as a no-op by reading 50_add_susfs_in_kernel-4.14-mtk.patch directly:
+ * this tree assigns sus mounts an mnt_id >= DEFAULT_SUS_MNT_ID (100000,
+ * see susfs_def.h) and (a) renumbers mnt_ids eagerly on namespace copy in
+ * copy_mnt_ns()/clone_mnt() (both in fs/namespace.c), and (b) filters any
+ * mnt_id >= 100000 out of show_vfsmnt()/show_mountinfo()/show_vfsstat()
+ * entirely (fs/proc_namespace.c) -- so umounting sus mounts cannot
+ * structurally produce a visible gap in the first place; there is nothing
+ * left for a "reorder" pass to fix (Task 9, round 5 review fix).
+ */
+void susfs_reorder_mnt_id(void) {
+}
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
@@ -964,6 +980,15 @@ out_copy_to_user:
 	}
 }
 
+/*
+ * Known gap: susfs_is_avc_log_spoofing_enabled is set here but not
+ * read/checked anywhere else in this file or in
+ * 50_add_susfs_in_kernel-4.14-mtk.patch (verified by grep) -- this kernel
+ * has no enforcement wired up for AVC-log spoofing. The command is
+ * accepted and reports success, but has no behavioral effect. Same class
+ * of pre-existing capability gap as susfs_is_hide_sus_mnts_for_non_su_procs_enabled
+ * above (Task 9, round 5 review fix).
+ */
 void susfs_set_avc_log_spoofing(void __user **user_info) {
 	struct st_susfs_avc_log_spoofing info = {0};
 
@@ -982,7 +1007,7 @@ out_copy_to_user:
 
 void susfs_show_variant(void __user **user_info) {
 	struct st_susfs_variant info = {0};
-	strscpy(info.susfs_variant, SUSFS_VARIANT, sizeof(info.susfs_variant) - 1);
+	strscpy(info.susfs_variant, SUSFS_VARIANT, sizeof(info.susfs_variant));
 	info.err = 0;
 	if (copy_to_user((struct st_susfs_variant __user*)*user_info, &info, sizeof(info))) {
 		info.err = -EFAULT;
@@ -991,39 +1016,57 @@ void susfs_show_variant(void __user **user_info) {
 
 void susfs_show_version(void __user **user_info) {
 	struct st_susfs_version info = {0};
-	strscpy(info.susfs_version, SUSFS_VERSION, sizeof(info.susfs_version) - 1);
+	strscpy(info.susfs_version, SUSFS_VERSION, sizeof(info.susfs_version));
 	info.err = 0;
 	if (copy_to_user((struct st_susfs_version __user*)*user_info, &info, sizeof(info))) {
 		info.err = -EFAULT;
 	}
 }
 
+/*
+ * Heap-allocated rather than a stack local (Task 9, round 5 review fix):
+ * struct st_susfs_enabled_features carries an 8192-byte
+ * enabled_features[] buffer (SUSFS_ENABLED_FEATURES_SIZE, see
+ * susfs_def.h), making sizeof(*info) ~8.2KB. This function runs at
+ * syscall depth via KernelSU-Next's sys_reboot supercall hijack on a
+ * 16KB THREAD_SIZE arm64 stack -- as a stack local it triggered
+ * "-Wframe-larger-than" (frame size 8272 vs. the 2800 limit) in the
+ * green Task 9 build's own log, a genuine stack-overflow risk under
+ * nested call depth, not just a style warning.
+ */
 void susfs_get_enabled_features(void __user **user_info) {
-	struct st_susfs_enabled_features info = {0};
+	struct st_susfs_enabled_features *info;
 	size_t len = 0;
 
+	info = kzalloc(sizeof(*info), GFP_KERNEL);
+	if (!info) {
+		SUSFS_LOGE("no enough memory\n");
+		return;
+	}
+
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_MOUNT\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_MOUNT\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_KSTAT\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_KSTAT\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_TRY_UMOUNT\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_TRY_UMOUNT\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-	len += scnprintf(info.enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n");
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n");
 #endif
-	info.err = 0;
-	if (copy_to_user((struct st_susfs_enabled_features __user*)*user_info, &info, sizeof(info))) {
-		info.err = -EFAULT;
+	info->err = 0;
+	if (copy_to_user((struct st_susfs_enabled_features __user*)*user_info, info, sizeof(*info))) {
+		info->err = -EFAULT;
 	}
+	kfree(info);
 }
 
 /* susfs_init */
