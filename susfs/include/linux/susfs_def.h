@@ -80,4 +80,53 @@ static inline void susfs_set_current_proc_umounted(void) {
 	set_thread_flag(TIF_PROC_UMOUNTED);
 }
 
+/*
+ * Companion getter for the setter above. KernelSU-Next's
+ * kernel/supercalls.c (do_manage_mark(), under #ifdef CONFIG_KSU_SUSFS)
+ * calls this directly -- this was the actual first symbol named by run
+ * 31582626614's build log; the setter alone (added in the previous fix
+ * round) was not sufficient.
+ */
+static inline bool susfs_is_current_proc_umounted(void) {
+	return (likely(test_thread_flag(TIF_PROC_UMOUNTED)));
+}
+
+/*
+ * The remaining defines/structs below are for supercalls.c dispatch
+ * entries that compile unconditionally under #ifdef CONFIG_KSU_SUSFS (not
+ * gated by any CONFIG_KSU_SUSFS_SUS_* sub-flag), so unlike SUS_PATH they
+ * can't be scoped out via defconfig -- confirmed by reading
+ * KernelSU-Next's kernel/supercalls.c at this tag directly (lines ~858-950).
+ */
+#define SUSFS_MAGIC 0xFAFAFAFA
+
+#define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS 0x55561
+#define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x60010
+#define SUSFS_ENABLED_FEATURES_SIZE 8192
+
+struct st_susfs_hide_sus_mnts_for_non_su_procs {
+	bool enabled;
+	int err;
+};
+
+struct st_susfs_avc_log_spoofing {
+	bool enabled;
+	int err;
+};
+
+struct st_susfs_enabled_features {
+	char enabled_features[SUSFS_ENABLED_FEATURES_SIZE];
+	int err;
+};
+
+struct st_susfs_variant {
+	char susfs_variant[16];
+	int err;
+};
+
+struct st_susfs_version {
+	char susfs_version[16];
+	int err;
+};
+
 #endif // #ifndef KSU_SUSFS_DEF_H
