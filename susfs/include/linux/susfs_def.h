@@ -59,4 +59,25 @@
 #define DATA_ADB_NO_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT "/data/adb/susfs_no_auto_add_sus_ksu_default_mount"
 #define DATA_ADB_NO_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT "/data/adb/susfs_no_auto_add_try_umount_for_bind_mount"
 
+/*
+ * KernelSU-Next v3.1.0-legacy-susfs's drivers/kernelsu/setuid_hook.c calls
+ * susfs_set_current_proc_umounted(), which does not exist in this project's
+ * vendored susfs4ksu kernel-4.14 branch (HEAD dated 2025-02-23, predates this
+ * KSU-Next tag). Backported from susfs4ksu's gki-android12-5.10 branch's
+ * susfs_def.h. TIF_PROC_UMOUNTED=33 verified safe on this kernel: every
+ * existing TIF_* bit in arch/arm64/include/asm/thread_info.h tops out at 24
+ * (TIF_TAGGED_ADDR), thread_info->flags is a 64-bit unsigned long on arm64,
+ * and this flag is only ever explicitly tested/set via
+ * test_thread_flag()/set_thread_flag() -- it is not part of any
+ * _TIF_WORK_MASK-style auto-processed mask, so adding it cannot perturb
+ * existing scheduler/signal behavior. set_thread_flag() comes from
+ * <linux/thread_info.h>, which setuid_hook.c already includes before this
+ * header.
+ */
+#define TIF_PROC_UMOUNTED 33
+
+static inline void susfs_set_current_proc_umounted(void) {
+	set_thread_flag(TIF_PROC_UMOUNTED);
+}
+
 #endif // #ifndef KSU_SUSFS_DEF_H
