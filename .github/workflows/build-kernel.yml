@@ -142,10 +142,22 @@ jobs:
           # defconfig never had (_SUS_MAP); left disabled below to preserve
           # the old config's on/off intent for everything else without
           # speculatively enabling new behavior.
+          #
+          # SUS_PATH is disabled (Task 9, run 31582626614): our vendored
+          # susfs4ksu kernel-4.14 source (frozen 2025-02-23) predates this
+          # KSU-Next tag's kernel/supercalls.c, which under
+          # #ifdef CONFIG_KSU_SUSFS_SUS_PATH also calls
+          # susfs_add_sus_path_loop() / susfs_set_i_state_on_external_dir()
+          # -- newer _loop/_root_path variants our vendored fs/susfs.c never
+          # implemented. The design doc (SUSFS-HANDOFF.md Sec.4) already
+          # flagged this flag "NOT recommended, but harmless"; disabling it
+          # avoids porting 3 more functions/cmd-IDs for a feature that was
+          # optional to begin with. Basic path hiding (susfs_add_sus_path,
+          # non-loop) is untouched and still compiled in via SUS_MOUNT/etc.
           cat >> arch/arm64/configs/${DEVICE}_defconfig << 'EOF'
           # susfs
           CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
+          # CONFIG_KSU_SUSFS_SUS_PATH is not set
           CONFIG_KSU_SUSFS_SUS_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
           CONFIG_KSU_SUSFS_TRY_UMOUNT=y
