@@ -152,8 +152,22 @@ jobs:
           # implemented. The design doc (SUSFS-HANDOFF.md Sec.4) already
           # flagged this flag "NOT recommended, but harmless"; disabling it
           # avoids porting 3 more functions/cmd-IDs for a feature that was
-          # optional to begin with. Basic path hiding (susfs_add_sus_path,
-          # non-loop) is untouched and still compiled in via SUS_MOUNT/etc.
+          # optional to begin with.
+          #
+          # CORRECTION (Task 9, round 5 review): this IS a real feature
+          # regression versus the old shas-susfs build, not a no-op --
+          # shas-susfs had CONFIG_KSU_SUSFS_SUS_PATH=y. Disabling the flag
+          # removes fs/susfs.c's entire sus_path block (susfs_add_sus_path
+          # included, lines ~35-138 -- confirmed by reading the actual
+          # #ifdef CONFIG_KSU_SUSFS_SUS_PATH .. #endif span), so no sus_path
+          # hiding of any kind survives, basic or otherwise. It is NOT
+          # "still compiled in via SUS_MOUNT/etc" as an earlier version of
+          # this comment claimed -- SUS_MOUNT hides mount entries, a
+          # different mechanism that does not substitute for path hiding.
+          # The decision to disable it stands (see reasoning above), but
+          # this comment previously overstated what's preserved. See
+          # susfs/ksu-next-susfs-verification.md for the full flag-by-flag
+          # comparison against this KSU-Next tag's actual Kconfig.
           cat >> arch/arm64/configs/${DEVICE}_defconfig << 'EOF'
           # susfs
           CONFIG_KSU_SUSFS=y
