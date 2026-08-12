@@ -180,6 +180,18 @@ struct filename* susfs_get_redirected_path(unsigned long ino);
 int susfs_get_sus_su_working_mode(void);
 int susfs_sus_su(struct st_sus_su* __user user_info);
 #endif
+/*
+ * These 5 are called unconditionally by KernelSU-Next's
+ * kernel/supercalls.c whenever CONFIG_KSU_SUSFS=y (not gated behind any
+ * CONFIG_KSU_SUSFS_SUS_* sub-flag) -- added for the v3.1.0-legacy-susfs
+ * pin (Task 9), since our vendored susfs4ksu kernel-4.14 source predates
+ * this KSU-Next tag and never defined them.
+ */
+void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
+void susfs_set_avc_log_spoofing(void __user **user_info);
+void susfs_get_enabled_features(void __user **user_info);
+void susfs_show_variant(void __user **user_info);
+void susfs_show_version(void __user **user_info);
 /* susfs_init */
 void susfs_init(void);
 
