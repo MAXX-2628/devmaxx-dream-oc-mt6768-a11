@@ -26,6 +26,7 @@
 #include "mtk_log.h"
 #include "mtk_disp_gamma.h"
 #include "mtk_dump.h"
+#include "mtk_kcal_ctrl.h"
 
 #define DISP_GAMMA_EN 0x0000
 #define DISP_GAMMA_CFG 0x0020
@@ -99,9 +100,37 @@ static int mtk_gamma_write_lut_reg(struct mtk_ddp_comp *comp,
 	int i;
 	int ret = 0;
 	int id = index_of_gamma(comp->id);
+	unsigned int entry_first, entry_last;
 
 	if (lock)
 		mutex_lock(&g_gamma_global_lock);
+
+	if (kcal_is_enabled()) {
+		for (i = 0; i < DISP_GAMMA_LUT_SIZE; i++) {
+			cmdq_pkt_write(handle, comp->cmdq_base,
+				(comp->regs_pa + DISP_GAMMA_LUT + i * 4),
+				kcal_gamma_entry(i, DISP_GAMMA_LUT_SIZE), ~0);
+		}
+
+		entry_first = kcal_gamma_entry(0, DISP_GAMMA_LUT_SIZE);
+		entry_last = kcal_gamma_entry(510, DISP_GAMMA_LUT_SIZE);
+		if ((int)(entry_first & 0x3FF) - (int)(entry_last & 0x3FF) > 0) {
+			cmdq_pkt_write(handle, comp->cmdq_base,
+				comp->regs_pa + DISP_GAMMA_CFG, 0x1 << 2, 0x4);
+			DDPINFO("kcal: decreasing LUT\n");
+		} else {
+			cmdq_pkt_write(handle, comp->cmdq_base,
+				comp->regs_pa + DISP_GAMMA_CFG, 0x0 << 2, 0x4);
+			DDPINFO("kcal: incremental LUT\n");
+		}
+
+		cmdq_pkt_write(handle, comp->cmdq_base,
+				comp->regs_pa + DISP_GAMMA_CFG,
+				0x2 | g_gamma_relay_value[id], 0x3);
+
+		goto gamma_write_lut_unlock;
+	}
+
 	gamma_lut = g_disp_gamma_lut[id];
 	if (gamma_lut == NULL) {
 		DDPINFO("%s: table [%d] not initialized\n", __func__, id);
