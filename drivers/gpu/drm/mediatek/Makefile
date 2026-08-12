@@ -4,6 +4,7 @@ mediatek-drm-y := mtk_drm_drv.o \
 		  mtk_disp_color.o \
 		  mtk_disp_ccorr.o \
 		  mtk_disp_gamma.o \
+		  mtk_kcal_ctrl.o \
 		  mtk_disp_aal.o \
 		  mtk_disp_dither.o \
 		  mtk_disp_ovl.o \
