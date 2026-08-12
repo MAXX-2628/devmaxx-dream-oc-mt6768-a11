@@ -163,6 +163,12 @@ void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned 
 #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 int susfs_add_try_umount(void __user **user_info);
 void susfs_try_umount(uid_t target_uid);
+/*
+ * Thin alias for KernelSU-Next's fs/namespace.c call site (added by
+ * 50_add_susfs_in_kernel-4.14-mtk.patch) -- naming-only gap vs the
+ * susfs_try_umount() this file already defines (Task 9, round 4 link-fix).
+ */
+void susfs_try_umount_all(uid_t uid);
 #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
 void susfs_auto_add_try_umount_for_bind_mount(struct path *path);
 #endif // #ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
@@ -205,5 +211,12 @@ void susfs_show_variant(void __user **user_info);
 void susfs_show_version(void __user **user_info);
 /* susfs_init */
 void susfs_init(void);
+/*
+ * Called from KernelSU-Next's own setuid_hook.c after all sus mounts are
+ * umounted for a transitioning process. No reference implementation exists
+ * in any available susfs4ksu branch for this KernelSU-Next generation --
+ * documented no-op, see fs/susfs.c (Task 9, round 4 link-fix).
+ */
+void susfs_reorder_mnt_id(void);
 
 #endif
