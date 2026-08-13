@@ -280,6 +280,53 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Android NDK availability for susfs tool cross-compile
+        run: |
+          set -e
+          # GitHub-hosted ubuntu-22.04 runners ship a preinstalled Android
+          # SDK/NDK (confirmed against actions/runner-images's own
+          # Ubuntu2204-Readme.md: ANDROID_NDK_HOME is pre-exported, currently
+          # pointing at NDK 27.3.13750724) -- no android-actions/setup-android
+          # step or manual NDK download needed, verified rather than assumed.
+          # This step only asserts that expectation still holds, same
+          # discipline as "Assert critical Kconfig flags" below: if a future
+          # runner-image change ever drops this, fail loudly here instead of
+          # silently shipping the old prctl-based (non-functional on this
+          # KernelSU-Next tag) prebuilt binary.
+          if [ -z "$ANDROID_NDK_HOME" ]; then
+            echo "FATAL: ANDROID_NDK_HOME not set -- runner image's preinstalled NDK may have changed/moved"
+            exit 1
+          fi
+          NDK_CLANG="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if [ ! -x "$NDK_CLANG" ]; then
+            echo "FATAL: NDK clang not found at $NDK_CLANG"
+            exit 1
+          fi
+          "$NDK_CLANG" --version
+          echo "NDK_CLANG=$NDK_CLANG" >> $GITHUB_ENV
+
+      - name: Cross-compile susfs userspace tool (reboot-syscall transport)
+        run: |
+          set -e
+          # Replaces the prctl-based prebuilt tool inherited unchanged from
+          # susfs4ksu (byte-identical to susfs4ksu's own prebuilt) -- this
+          # KernelSU-Next tag (v3.1.0-legacy-susfs) has ZERO prctl() susfs
+          # dispatch; the only reachable transport is a hijacked reboot(2)
+          # syscall (kernel/supercalls.c:ksu_handle_sys_reboot(), wired into
+          # kernel/reboot.c's SYSCALL_DEFINE4(reboot,...) by
+          # susfs/hooks/apply_ksu_next_hooks.py above). Source:
+          # susfs/ksu_susfs_next/main.c (see its header comment for the full
+          # transport write-up, including why the syscall's own return value
+          # must be ignored). Static + stripped, arm64, target API 35 --
+          # matches the linking style of the binary this replaces (verified
+          # via `file` against the old susfs4ksu-provided prebuilt: "ELF
+          # 64-bit LSB executable, ARM aarch64, statically linked, for
+          # Android 35, ... stripped").
+          "$NDK_CLANG" --target=aarch64-linux-android35 -static -O2 -Wall -Wextra -s \
+            -o susfs/ksu_module_susfs/tools/ksu_susfs_arm64 \
+            susfs/ksu_susfs_next/main.c
+          file susfs/ksu_module_susfs/tools/ksu_susfs_arm64
+
       - name: Package susfs userspace module
         run: |
           cd susfs/ksu_module_susfs
