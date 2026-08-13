@@ -346,9 +346,13 @@ void command_response_timeout(struct work_struct *pwork)
 			g_bdev->cmd_timeout_count = 0;
 
 			btmtk_cif_dump_fw_no_rsp(BT_BTIF_DUMP_LOG);
-			bt_trigger_reset();
-		} else
-			queue_delayed_work(workqueue_task, &work, HZ>>1);
+			/* Do NOT hard-reset the chip here: bt_trigger_reset() drops active
+			 * ACL/A2DP links, which shows up as BT disconnecting and
+			 * reconnecting while streaming. The BT stack recovers missed
+			 * commands on its own; keep the link alive instead.
+			 */
+		}
+		queue_delayed_work(workqueue_task, &work, HZ>>1);
 	}
 }
 
