@@ -419,6 +419,8 @@ CONFIG_PANIC_TIMEOUT=1
 # CONFIG_DEBUG_BUGVERBOSE is not set
 CONFIG_RCU_CPU_STALL_TIMEOUT=60
 CONFIG_FAULT_INJECTION=y
+# MTK_SCHED_TRACERS required: defines mtk_events tracepoints (sspm_ipi, ppm_user_setting) referenced by power drivers
+CONFIG_MTK_SCHED_TRACERS=y
 CONFIG_STATIC_USERMODEHELPER_PATH="/system_ext/bin/aee_core_forwarder"
 CONFIG_CRYPTO_TWOFISH=y
 # CONFIG_CRYPTO_HW is not set
