@@ -130,6 +130,18 @@
 #define SUSFS_MAX_LEN_PATHNAME 256
 #define SUSFS_ENABLED_FEATURES_SIZE 8192
 
+/* Sentinel poisoned into every err-carrying struct's `err` field BEFORE the
+ * syscall (Task 11, review round 2). Without this, a kernel that never
+ * actually runs our handler at all -- wrong kernel flashed,
+ * CONFIG_KSU_SUSFS=n, the reboot hook not applied -- leaves `err` at its
+ * zero-initialized value, which is indistinguishable from a real `err == 0`
+ * success. Poisoning first means "err unchanged after the syscall"
+ * reliably means "the kernel never touched this struct," caught explicitly
+ * below rather than silently reported as success. Value chosen well outside
+ * any real errno range and unlikely to collide with a legitimate
+ * kernel-reported error code. */
+#define SUSFS_ERR_NO_RESPONSE (-0x5355)
+
 #ifndef __NEW_UTS_LEN
 #define __NEW_UTS_LEN 64
 #endif
@@ -290,8 +302,15 @@ static void print_help(void) {
 	log("        set_cmdline_or_bootconfig </path/to/fake_cmdline_file/or/fake_bootconfig_file>\n");
 	log("\n");
 	log("        set_hide_sus_mnts_for_non_su_procs <0|1>\n");
-	log("         |--> New in this KernelSU-Next tag (not present in the old prctl tool):\n");
-	log("              hide sus mounts from /proc/self/mount* for non-su-allowed processes\n");
+	log("         |--> New in this KernelSU-Next tag. NOTE: verified against fs/susfs.c that this\n");
+	log("              kernel build has no code anywhere that actually reads this flag once set --\n");
+	log("              the command is accepted and its `err` field will report success, but it has\n");
+	log("              no behavioral effect (pre-existing gap in this tag's own kernel-side port, not\n");
+	log("              introduced by this tool -- same known-gap comment block in fs/susfs.c covers\n");
+	log("              both this command and enable_avc_log_spoofing below). This is currently the\n");
+	log("              ONLY reachable SUS_MOUNT command in this tool -- base/automatic sus-mount\n");
+	log("              hiding for KSU's own module mounts still works via a separate, non-command\n");
+	log("              mechanism in fs/namespace.c, but there is no working manual control here.\n");
 	log("\n");
 	log("        enable_avc_log_spoofing <0|1>\n");
 	log("         |--> New in this KernelSU-Next tag. NOTE: verified against fs/susfs.c that this\n");
@@ -542,13 +561,25 @@ int main(int argc, char *argv[]) {
 		bool enabled;
 
 		if (parse_bool_arg(argv[2], &enabled)) { print_help(); return 1; }
+		log("[!] NOTE: fs/susfs.c never reads susfs_is_hide_sus_mnts_for_non_su_procs_enabled\n");
+		log("[!] anywhere -- this flag is accepted and stored, but has NO behavioral effect on\n");
+		log("[!] this kernel build (pre-existing gap in this KernelSU-Next tag's own port, not\n");
+		log("[!] introduced by this tool). This is currently the only reachable SUS_MOUNT command.\n");
 		info.enabled = enabled;
+		info.err = SUSFS_ERR_NO_RESPONSE;
 		susfs_syscall(CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] set_hide_sus_mnts_for_non_su_procs got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
 		if (info.err) {
 			log("[-] set_hide_sus_mnts_for_non_su_procs failed, err=%d\n", info.err);
 			return 1;
 		}
-		log("[+] hide_sus_mnts_for_non_su_procs set to %d\n", enabled);
+		log("[+] hide_sus_mnts_for_non_su_procs set to %d (kernel responded; see the NOTE above --\n", enabled);
+		log("[+] the flag is stored but not currently wired to any enforcement on this build)\n");
 		return 0;
 
 	} else if (argc == 3 && !strcmp(argv[1], "enable_avc_log_spoofing")) {
@@ -556,30 +587,70 @@ int main(int argc, char *argv[]) {
 		bool enabled;
 
 		if (parse_bool_arg(argv[2], &enabled)) { print_help(); return 1; }
+		log("[!] NOTE: fs/susfs.c never reads susfs_is_avc_log_spoofing_enabled anywhere -- this\n");
+		log("[!] flag is accepted and stored, but has NO behavioral effect on this kernel build\n");
+		log("[!] (pre-existing gap in this KernelSU-Next tag's own port, not introduced by this tool).\n");
 		info.enabled = enabled;
+		info.err = SUSFS_ERR_NO_RESPONSE;
 		susfs_syscall(CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] enable_avc_log_spoofing got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
 		if (info.err) {
 			log("[-] enable_avc_log_spoofing failed, err=%d\n", info.err);
 			return 1;
 		}
-		log("[+] avc_log_spoofing set to %d\n", enabled);
+		log("[+] avc_log_spoofing set to %d (kernel responded; see the NOTE above -- the flag is\n", enabled);
+		log("[+] stored but not currently wired to any enforcement on this build)\n");
 		return 0;
 
 	} else if (argc == 3 && !strcmp(argv[1], "show")) {
 		if (!strcmp(argv[2], "version")) {
 			struct st_susfs_version info = {0};
+			info.err = SUSFS_ERR_NO_RESPONSE;
 			susfs_syscall(CMD_SUSFS_SHOW_VERSION, &info);
+			if (info.err == SUSFS_ERR_NO_RESPONSE) {
+				log("[-] show version got no response from the kernel -- "
+					"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+					"wrong kernel is running\n");
+				return 1;
+			}
 			if (info.err) {
 				log("[-] show version failed, err=%d\n", info.err);
+				return 1;
+			}
+			if (info.susfs_version[0] == '\0') {
+				/* A responding kernel with CONFIG_KSU_SUSFS=y always fills this in
+				 * (fs/susfs.c:susfs_show_version() strscpy's SUSFS_VERSION
+				 * unconditionally) -- an empty string here means something didn't
+				 * actually run, same class of problem as the no-response case above,
+				 * just not distinguishable via `err` alone. */
+				log("[-] show version returned an empty string -- treating as a failed/"
+					"unresponsive kernel, not a real empty version\n");
 				return 1;
 			}
 			printf("%s\n", info.susfs_version);
 			return 0;
 		} else if (!strcmp(argv[2], "variant")) {
 			struct st_susfs_variant info = {0};
+			info.err = SUSFS_ERR_NO_RESPONSE;
 			susfs_syscall(CMD_SUSFS_SHOW_VARIANT, &info);
+			if (info.err == SUSFS_ERR_NO_RESPONSE) {
+				log("[-] show variant got no response from the kernel -- "
+					"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+					"wrong kernel is running\n");
+				return 1;
+			}
 			if (info.err) {
 				log("[-] show variant failed, err=%d\n", info.err);
+				return 1;
+			}
+			if (info.susfs_variant[0] == '\0') {
+				log("[-] show variant returned an empty string -- treating as a failed/"
+					"unresponsive kernel, not a real empty variant\n");
 				return 1;
 			}
 			printf("%s\n", info.susfs_variant);
@@ -590,7 +661,15 @@ int main(int argc, char *argv[]) {
 				perror("calloc");
 				return 1;
 			}
+			info->err = SUSFS_ERR_NO_RESPONSE;
 			susfs_syscall(CMD_SUSFS_SHOW_ENABLED_FEATURES, info);
+			if (info->err == SUSFS_ERR_NO_RESPONSE) {
+				log("[-] show enabled_features got no response from the kernel -- "
+					"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+					"wrong kernel is running\n");
+				free(info);
+				return 1;
+			}
 			if (info->err) {
 				log("[-] show enabled_features failed, err=%d\n", info->err);
 				free(info);
