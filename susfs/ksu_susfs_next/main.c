@@ -486,19 +486,55 @@ int main(int argc, char *argv[]) {
 		return 0;
 
 	} else if (argc == 3 && !strcmp(argv[1], "set_cmdline_or_bootconfig")) {
-		char abs_path[PATH_MAX], *p_abs_path;
+		char abs_path[PATH_MAX], *p_abs_path, *buffer;
+		FILE *file;
+		long file_size;
+		size_t result;
 
+		/*
+		 * IMPORTANT: the kernel handler does a raw
+		 * strncpy_from_user(fake_cmdline_or_bootconfig, *user_info, ...)
+		 * on whatever pointer we pass -- it does NOT open/read a file on
+		 * our behalf. The pointer we pass must therefore point at the
+		 * actual desired /proc/cmdline or /proc/bootconfig TEXT CONTENT,
+		 * not at a path string (confirmed by reading
+		 * fs/susfs.c:susfs_set_cmdline_or_bootconfig() directly). We must
+		 * read the file ourselves and pass its contents, exactly like the
+		 * old prctl-based tool did -- passing the path string itself
+		 * (an earlier draft of this file's mistake) would set the fake
+		 * cmdline to the literal path text instead of its contents.
+		 */
 		p_abs_path = realpath(argv[2], abs_path);
 		if (p_abs_path == NULL) {
 			perror("realpath");
 			return 1;
 		}
-		/* Kernel does strncpy_from_user() straight off the pointer we pass
-		 * -- no length prefix needed, just a NUL-terminated path to the
-		 * fake cmdline/bootconfig text file, matching
-		 * fs/susfs.c:susfs_set_cmdline_or_bootconfig() exactly. */
-		susfs_syscall(CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG, p_abs_path);
-		log("[i] set_cmdline_or_bootconfig request sent for '%s'\n", p_abs_path);
+		file = fopen(p_abs_path, "rb");
+		if (file == NULL) {
+			perror("Error opening file");
+			return 1;
+		}
+		fseek(file, 0, SEEK_END);
+		file_size = ftell(file);
+		rewind(file);
+		buffer = (char *)malloc((size_t)file_size + 1);
+		if (buffer == NULL) {
+			perror("No enough memory");
+			fclose(file);
+			return 1;
+		}
+		result = fread(buffer, 1, (size_t)file_size, file);
+		if (result != (size_t)file_size) {
+			perror("Reading error");
+			fclose(file);
+			free(buffer);
+			return 1;
+		}
+		buffer[file_size] = '\0';
+		fclose(file);
+		susfs_syscall(CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG, buffer);
+		free(buffer);
+		log("[i] set_cmdline_or_bootconfig request sent (source file '%s')\n", p_abs_path);
 		return 0;
 
 	} else if (argc == 3 && !strcmp(argv[1], "set_hide_sus_mnts_for_non_su_procs")) {
