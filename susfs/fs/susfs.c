@@ -956,10 +956,26 @@ out:
  * 50_add_susfs_in_kernel-4.14-mtk.patch (verified by grep) -- this
  * kernel has no enforcement wired up for the "hide sus mounts from
  * non-su processes" refinement. The command is accepted and reports
- * success, but has no behavioral effect. Base SUS_MOUNT hiding (which IS
- * fully implemented) is unaffected. This mirrors Task 3's already
- * documented susfs_add_sus_mount gap -- an honest pre-existing capability
- * gap in the vendored source, not something introduced by this fix.
+ * success, but has no behavioral effect.
+ *
+ * SUS_MOUNT hiding, precisely stated (final whole-branch review fix,
+ * corrects an earlier overstatement here): automatic hiding of mounts KSU
+ * itself creates DOES fully work with zero userspace involvement --
+ * 50_add_susfs_in_kernel-4.14-mtk.patch's vfs_kern_mount hunk in
+ * fs/namespace.c calls susfs_is_current_ksu_domain() and assigns
+ * mnt_id >= DEFAULT_SUS_MNT_ID to any mount created in KSU's domain, and
+ * show_vfsmnt/show_mountinfo/show_vfsstat all filter entries at or above
+ * that threshold. What is NOT implemented is susfs_add_sus_mount() itself
+ * (this file, above) -- the function a userspace tool would call to
+ * register an arbitrary, KSU-external path as a sus mount -- because this
+ * KSU-Next tag's kernel/supercalls.c dispatch switch has no
+ * CMD_SUSFS_ADD_SUS_MOUNT case at all (confirmed by reading the switch
+ * directly; unlike ADD_SUS_PATH, ADD_SUS_KSTAT, ADD_TRY_UMOUNT, etc.,
+ * which are all present). So: base/automatic SUS_MOUNT hiding works;
+ * manual per-path registration via a susfs command does not exist on this
+ * tag. This mirrors Task 3's already documented susfs_add_sus_mount gap
+ * -- an honest pre-existing capability gap in the vendored source, not
+ * something introduced by this fix.
  */
 bool susfs_is_hide_sus_mnts_for_non_su_procs_enabled __read_mostly = false;
 bool susfs_is_avc_log_spoofing_enabled __read_mostly = false;
