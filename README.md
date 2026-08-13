@@ -15,54 +15,54 @@
 
 </div>
 
-## ðŸ¿ What is this? (for total beginners)
+## 🍿 What is this? (for total beginners)
 
 A phone is like a little computer. Before it can do *anything*, it needs a program called a **kernel** to wake up its brain.
 
 This repo is a custom **kernel** made for the **Redmi 9** (and Redmi 9T). It does two things:
 
-1. âš¡ Runs at **stock (normal) clock speeds** â€” like the phone originally shipped with. Safe, no overheating.
-2. ðŸ”“ Has **KernelSU** built in â€” so you can get **root** (super-powers over your own phone).
+1. ⚡ Runs at **stock (normal) clock speeds** — like the phone originally shipped with. Safe, no overheating.
+2. 🔓 Has **KernelSU** built in — so you can get **root** (super-powers over your own phone).
 
 > **Root** = permission to use your phone 100%. Without it, the phone decides what you can and can't do. With it, *you* decide.
 
 ---
 
-## ðŸ“‹ The whole story in 30 seconds
+## 📋 The whole story in 30 seconds
 
 | # | What we tried | What happened |
 |---|---|---|
-| 1 | KernelSU-Next (a newer root tool) | ðŸ’¥ Bootloop â€” phone restarts forever |
-| 2 | Same, but "permissive" security | âœ… Boots, but root is flaky/not clean |
-| 3 | KernelSU v0.9.5 (the old, faithful one) | âœ… Boots, but **root refused to work** |
-| 4 | KernelSU v0.9.5 + **kprobes** on | ðŸ’¥ Bootloop â€” crashed the whole kernel |
-| 5 | Same + KASLR disabled (defense mode off) | ðŸ’¥ Still bootloop |
-| 6 | ðŸ” **Investigation**: kprobes is *broken* on MediaTek 4.14 kernels. It can never work here. | ðŸ’¡ |
-| 7 | ðŸŽ‰ KernelSU v0.9.5 with **manual hooks** (no kprobes) | âœ… **BOOTS + ROOT WORKS!** |
+| 1 | KernelSU-Next (a newer root tool) | 💥 Bootloop — phone restarts forever |
+| 2 | Same, but "permissive" security | ✅ Boots, but root is flaky/not clean |
+| 3 | KernelSU v0.9.5 (the old, faithful one) | ✅ Boots, but **root refused to work** |
+| 4 | KernelSU v0.9.5 + **kprobes** on | 💥 Bootloop — crashed the whole kernel |
+| 5 | Same + KASLR disabled (defense mode off) | 💥 Still bootloop |
+| 6 | 🔍 **Investigation**: kprobes is *broken* on MediaTek 4.14 kernels. It can never work here. | 💡 |
+| 7 | 🎉 KernelSU v0.9.5 with **manual hooks** (no kprobes) | ✅ **BOOTS + ROOT WORKS!** |
 
 Scroll down for the **full story with every detail**, crash logs, and all the detective work.
 
 ---
 
-## ðŸ“± Supported devices
+## 📱 Supported devices
 
 | Device | Codename | Model | Confirmed firmware |
 |---|---|---|---|
 | Redmi 9 (Global) | `lancelot` | M2004J19C / M2004J19G / M2004J19I | MIUI **V12.5.6.0.RJCMIXM** (Android 11) |
-| Redmi 9 Power / Note 9 4G | `lancelot` | â€” | A11 Global / India |
-| Redmi 9T / Note 9 4G | `merlin` | â€” | A11 Global |
+| Redmi 9 Power / Note 9 4G | `lancelot` | — | A11 Global / India |
+| Redmi 9T / Note 9 4G | `merlin` | — | A11 Global |
 
-> âš ï¸ **Only Android 11 stock MIUI.** Flashing this on Android 12/13 = **guaranteed bootloop**. This is not a threat, this is a promise.
+> ⚠️ **Only Android 11 stock MIUI.** Flashing this on Android 12/13 = **guaranteed bootloop**. This is not a threat, this is a promise.
 
 ---
 
-## ðŸ† TL;DR â€” the stack that WORKS (don't change it casually)
+## 🏆 TL;DR — the stack that WORKS (don't change it casually)
 
 | Component | Version | Why |
 |---|---|---|
 | Kernel source | `shas-noc` branch (base commit `6af5519f`) | Stock clocks, proven to boot stock MIUI |
 | Root | **KernelSU v0.9.5** (`tiann/KernelSU` tag) | Last version that supports non-GKI (old-style) kernels |
-| Hook mode | **MANUAL hooks** (kprobes **OFF**!) | See "The Big Discovery" below â€” kprobes crash this kernel |
+| Hook mode | **MANUAL hooks** (kprobes **OFF**!) | See "The Big Discovery" below — kprobes crash this kernel |
 | Compiler | **AOSP Clang 14** (`clang-r450784d`, android13-release) + LLD 14 | Matches the original known-good build |
 | GCC | aarch64-linux-android-4.9 r35 + arm-linux-androideabi-4.9 r34 | Standard Android 11 prebuilts |
 | Manager app | `KernelSU_v0.9.5_11872-release.apk` (exactly this one!) | Manager and kernel must speak the same language |
@@ -70,22 +70,22 @@ Scroll down for the **full story with every detail**, crash logs, and all the de
 
 ---
 
-## ðŸ” How KernelSU grants super-powers (for kids AND engineers)
+## 🔍 How KernelSU grants super-powers (for kids AND engineers)
 
-KernelSU gives an app root by **standing at the door** of the phone's most important functions. When an app tries to do something special, KernelSU checks: *"Is this app allowed?"* If yes â€” super-powers granted! ðŸ¦¸
+KernelSU gives an app root by **standing at the door** of the phone's most important functions. When an app tries to do something special, KernelSU checks: *"Is this app allowed?"* If yes — super-powers granted! 🦸
 
 There are **two ways** KernelSU can stand at the door:
 
 <details>
-<summary><b>ðŸ› ï¸ Way 1: KPROBES â€” "the spy that rewrites instructions" (ðŸ’¥ BROKEN on our phone)</b></summary>
+<summary><b>🛠️ Way 1: KPROBES — "the spy that rewrites instructions" (💥 BROKEN on our phone)</b></summary>
 
 Kprobes works by **sneaking little spy instructions** into running kernel code. Every time the kernel runs a spy instruction, the spy reports back to KernelSU.
 
 **Why it's broken on MediaTek 4.14 kernels (ours):**
 
 - The kernel has a security feature (`CONFIG_RANDOMIZE_BASE`, aka "**KASLR**") that moves code around randomly at boot.
-- To plant a spy, the kernel must **change an instruction** in memory â€” and on this chipset that triggers a crash (`do_undefinstr` â€” the CPU sees an "illegal instruction").
-- Even with KASLR turned off, the crash just changed shape (`IABT` â€” the CPU tried to *run* code from an empty address). The spy mechanism itself is faulty on this chip.
+- To plant a spy, the kernel must **change an instruction** in memory — and on this chipset that triggers a crash (`do_undefinstr` — the CPU sees an "illegal instruction").
+- Even with KASLR turned off, the crash just changed shape (`IABT` — the CPU tried to *run* code from an empty address). The spy mechanism itself is faulty on this chip.
 
 **What the crash logs looked like** (we kept them!):
 
@@ -96,18 +96,18 @@ Kprobes works by **sneaking little spy instructions** into running kernel code. 
              Kernel Offset: disabled
 ```
 
-`IABT` = "Instruction Abort" = the processor tried to fetch the *next* instruction from an address where there IS NO INSTRUCTION. Imagine a spy hiding in a wall, but the wall isn't there. ðŸ’¥
+`IABT` = "Instruction Abort" = the processor tried to fetch the *next* instruction from an address where there IS NO INSTRUCTION. Imagine a spy hiding in a wall, but the wall isn't there. 💥
 
 **Verdict:** kprobes is *fundamentally broken* on this kernel. No configuration can save it.
 </details>
 
 <details>
-<summary><b>ðŸ“– Way 2: MANUAL HOOKS â€” "call the spy directly" (âœ… WORKS!)</b></summary>
+<summary><b>📖 Way 2: MANUAL HOOKS — "call the spy directly" (✅ WORKS!)</b></summary>
 
-Manually-hooked KernelSU doesn't rewrite any instructions. Instead, the kernel source code itself calls KernelSU's helper functions at the right moments â€” like adding "call your mom" to your own to-do list instead of hiring a spy to watch you.
+Manually-hooked KernelSU doesn't rewrite any instructions. Instead, the kernel source code itself calls KernelSU's helper functions at the right moments — like adding "call your mom" to your own to-do list instead of hiring a spy to watch you.
 
 The official KernelSU docs have a page for this exact situation:
-ðŸ‘‰ [Integrate for non-GKI devices](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html)
+👉 [Integrate for non-GKI devices](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html)
 
 KernelSU's own config makes this automatic: when `KPROBES` is **off**, it switches to "manual hook mode" by itself.
 
@@ -115,45 +115,45 @@ KernelSU's own config makes this automatic: when `KPROBES` is **off**, it switch
 config KSU_MANUAL_HOOK
 	bool "KernelSU manual hook mode."
 	depends on KSU && KSU != m
-	default y if !KPROBES      # â† no kprobes = manual mode, automatically
+	default y if !KPROBES      # ← no kprobes = manual mode, automatically
 ```
 
 We patched **6 places** in the kernel source. Each one is a tiny phone call.
 
-ðŸ“ž **The 6 phone calls (the 6 hooks):**
+📞 **The 6 phone calls (the 6 hooks):**
 
 | File | Function patched | What this hook does |
 |---|---|---|
-| `fs/exec.c` | `do_execveat_common` | Catches every app launch (`exec`) â€” lets allowed apps run as root, redirects `su` |
-| `fs/open.c` | `faccessat` | Catches apps checking if `/system/bin/su` exists â€” hides it from unallowed apps |
+| `fs/exec.c` | `do_execveat_common` | Catches every app launch (`exec`) — lets allowed apps run as root, redirects `su` |
+| `fs/open.c` | `faccessat` | Catches apps checking if `/system/bin/su` exists — hides it from unallowed apps |
 | `fs/read_write.c` | `vfs_read` | While booting, secretly injects KernelSU's startup script into an Android config file |
-| `fs/stat.c` | `vfs_statx` | Catches apps asking for `su` file details â€” same hiding trick, different spy window |
+| `fs/stat.c` | `vfs_statx` | Catches apps asking for `su` file details — same hiding trick, different spy window |
 | `fs/devpts/inode.c` | `devpts_get_priv` | Fixes `pm` (package manager) inside a root shell |
-| `drivers/input/input.c` | `input_handle_event` | Listens for **Volume-Down Ã— 3** at boot â€” enables KernelSU **Safe Mode** (boot rescue) |
+| `drivers/input/input.c` | `input_handle_event` | Listens for **Volume-Down × 3** at boot — enables KernelSU **Safe Mode** (boot rescue) |
 
 </details>
 
 ---
 
-## ðŸ•µï¸ The FULL detective story â€” every attempt, in order
+## 🕵️ The FULL detective story — every attempt, in order
 
 > Real logs, real commits, real workflow runs. This is what actually happened.
 
-### ðŸ§ª Attempt 1 â€” KernelSU-Next (legacy branch) â†’ ðŸ’¥ BOOTLOOP
+### 🧪 Attempt 1 — KernelSU-Next (legacy branch) → 💥 BOOTLOOP
 *Workflow run `31324017848`*
 
 - **What we did:** Tried the modern fork "KernelSU-Next" on the legacy branch, with `CONFIG_KSU_KPROBES_HOOK` (kprobe-based hooks).
-- **Result:** The phone entered a bootloop â€” restarting forever. The zip comparison proved the kernel source was identical, so the root cause was KernelSU-Next + kprobes + Clang 11.
+- **Result:** The phone entered a bootloop — restarting forever. The zip comparison proved the kernel source was identical, so the root cause was KernelSU-Next + kprobes + Clang 11.
 - **Lesson learned:** Never enable kprobe hooks on this kernel.
 
-### ðŸ§ª Attempt 2 â€” KernelSU-Next + permissive SELinux â†’ âœ… BOOTS (but not recommended)
+### 🧪 Attempt 2 — KernelSU-Next + permissive SELinux → ✅ BOOTS (but not recommended)
 *Workflow run `31359616375`*
 
 - **What we did:** Same as above but forced SELinux to "permissive" (all rules off).
-- **Result:** It booted! But permissive SELinux is unsafe and insecure â€” it's like turning off all the locks in your house. Not acceptable as a final solution.
-- **Additional lesson:** Some roots fail because SELinux blocks them â€” but that doesn't mean weakening SELinux is the answer.
+- **Result:** It booted! But permissive SELinux is unsafe and insecure — it's like turning off all the locks in your house. Not acceptable as a final solution.
+- **Additional lesson:** Some roots fail because SELinux blocks them — but that doesn't mean weakening SELinux is the answer.
 
-### ðŸ§ª Attempt 3 â€” KernelSU v0.9.5 + Clang 14 â†’ âœ… BOOTS, âŒ ROOT FAILS
+### 🧪 Attempt 3 — KernelSU v0.9.5 + Clang 14 → ✅ BOOTS, ❌ ROOT FAILS
 *Workflow runs `31361347555` + `31362131229`*
 
 - **What we did:** Switched to the good old **KernelSU v0.9.5** (the last version supporting non-GKI kernels), compiled with **Clang 14** (`clang-r450784d`, AOSP android13-release).
@@ -169,9 +169,9 @@ We patched **6 places** in the kernel source. Each one is a tiny phone call.
 #endif
 ```
 
-- **So we thought:** "Easy! Just enable kprobes!" ðŸ˜…
+- **So we thought:** "Easy! Just enable kprobes!" 😅
 
-### ðŸ§ª Attempt 4 â€” v0.9.5 + kprobes ON â†’ ðŸ’¥ BOOTLOOP AGAIN
+### 🧪 Attempt 4 — v0.9.5 + kprobes ON → 💥 BOOTLOOP AGAIN
 *Commit `ad24fee9`, workflow run `31365845786`*
 
 - **What we did:** Added `CONFIG_KPROBES=y`, `CONFIG_HAVE_KPROBES=y`, `CONFIG_KRETPROBES=y`, `CONFIG_KPROBE_EVENTS=y` to the defconfig.
@@ -183,12 +183,12 @@ We patched **6 places** in the kernel source. Each one is a tiny phone call.
        Kernel Offset: 0x32000000 (enabled)
 ```
 
-- **Analysis:** `do_undefinstr` = CPU hit an "illegal instruction". The CPU was told to execute a kprobe spy instruction but it didn't understand it. The crash happened during `kernel_init` â€” right when kprobes were being registered.
+- **Analysis:** `do_undefinstr` = CPU hit an "illegal instruction". The CPU was told to execute a kprobe spy instruction but it didn't understand it. The crash happened during `kernel_init` — right when kprobes were being registered.
 
-### ðŸ§ª Attempt 5 â€” v0.9.5 + kprobes + NO KASLR â†’ ðŸ’¥ STILL BOOTLOOP
+### 🧪 Attempt 5 — v0.9.5 + kprobes + NO KASLR → 💥 STILL BOOTLOOP
 *Commit `25dd7a03`, workflow run `31371351178`*
 
-- **What we did:** Disabled KASLR (`CONFIG_RANDOMIZE_BASE` off) â€” reasoning: with code at fixed addresses, the kprobe machinery might work.
+- **What we did:** Disabled KASLR (`CONFIG_RANDOMIZE_BASE` off) — reasoning: with code at fixed addresses, the kprobe machinery might work.
 - **Result:** Different crash, same bootloop:
 
 ```text
@@ -198,9 +198,9 @@ We patched **6 places** in the kernel source. Each one is a tiny phone call.
        Kernel Offset: disabled
 ```
 
-- **Analysis:** `IABT` = "Instruction Abort at a non-executable address". The PC (program counter) pointed inside an empty page â€” the CPU tried to *run* instructions that don't exist. This was **not** a KASLR problem. The kprobe mechanism itself is broken on this MTK 4.14 kernel.
+- **Analysis:** `IABT` = "Instruction Abort at a non-executable address". The PC (program counter) pointed inside an empty page — the CPU tried to *run* instructions that don't exist. This was **not** a KASLR problem. The kprobe mechanism itself is broken on this MTK 4.14 kernel.
 
-### ðŸ§ª Attempt 6 â€” The Investigation ðŸ”¬ *(the turning point)*
+### 🧪 Attempt 6 — The Investigation 🔬 *(the turning point)*
 
 We stopped building and started reading:
 
@@ -209,7 +209,7 @@ We stopped building and started reading:
 ```kconfig
 config KSU_MANUAL_HOOK
 	bool "KernelSU manual hook mode."
-	default y if !KPROBES        # â† this line!
+	default y if !KPROBES        # ← this line!
 
 config KSU_KPROBES_HOOK
 	bool "KernelSU tracepoint+kretprobe hook"
@@ -219,21 +219,21 @@ config KSU_KPROBES_HOOK
 
 2. **We found the smoking gun in the WORKING OC kernel:** The original overclocked kernel (which <u>had working root</u>!) printed **"KPROBES is disabled"** in its boot logs! The OC kernel's KernelSU was *never* using kprobes!
 
-3. **We read the official guide** â†’ [Integrate for non-GKI devices](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html) â€” for kernels older than ~5.10 or with broken kprobes, the recommended way is **manual hooks**: patch the kernel source so *it calls* KernelSU's functions.
+3. **We read the official guide** → [Integrate for non-GKI devices](https://kernelsu.org/guide/how-to-integrate-for-non-gki.html) — for kernels older than ~5.10 or with broken kprobes, the recommended way is **manual hooks**: patch the kernel source so *it calls* KernelSU's functions.
 
-### ðŸ† Attempt 7 â€” v0.9.5 + MANUAL HOOKS (NO kprobes!) â†’ âœ… âœ… âœ… IT WORKS!
+### 🏆 Attempt 7 — v0.9.5 + MANUAL HOOKS (NO kprobes!) → ✅ ✅ ✅ IT WORKS!
 *Commit `bceb45eb`, workflow run `31375278717`*
 
 - **What we did:**
   1. Kept `CONFIG_KSU=y` but made sure kprobes stay **off** (`# CONFIG_KPROBES is not set`)
   2. Added a build step that patches **6 kernel source files** with the official manual-hook code (see table above)
   3. Built with the proven Clang 14 toolchain
-- **Result:** **Boots into MIUI âœ” AND grants root âœ”**
-- **Why it works:** No instruction rewriting, no spies â€” just direct phone calls from the kernel source. The working OC kernel did the same thing all along.
+- **Result:** **Boots into MIUI ✔ AND grants root ✔**
+- **Why it works:** No instruction rewriting, no spies — just direct phone calls from the kernel source. The working OC kernel did the same thing all along.
 
 ---
 
-## ðŸŽ® Interactive Quiz â€” did you understand the story?
+## 🎮 Interactive Quiz — did you understand the story?
 
 <details>
 <summary><b>Question 1:</b> Why did the kernel bootloop with kprobes enabled?</summary>
@@ -244,31 +244,31 @@ Because kprobes works by rewriting instructions inside the running kernel, and o
 <details>
 <summary><b>Question 2:</b> What did the WORKING OC kernel teach us?</summary>
 
-Its boot log said **"KPROBES is disabled"** â€” proving kprobes were never needed. The OC kernel's KernelSU used source-level (manual) hooks, exactly like our final build.
+Its boot log said **"KPROBES is disabled"** — proving kprobes were never needed. The OC kernel's KernelSU used source-level (manual) hooks, exactly like our final build.
 </details>
 
 <details>
 <summary><b>Question 3:</b> Why did root fail on Attempt 3 (no kprobes)?</summary>
 
-Because KernelSU v0.9.5 compiles its `su` hooks under `#ifdef CONFIG_KPROBES` â€” without kprobes the hooks were compiled out, so no app could ever be granted root.
+Because KernelSU v0.9.5 compiles its `su` hooks under `#ifdef CONFIG_KPROBES` — without kprobes the hooks were compiled out, so no app could ever be granted root.
 </details>
 
 <details>
 <summary><b>Question 4:</b> What are the two "hook modes" in KernelSU?</summary>
 
-**Kprobe mode** (automatic, rewrites instructions â€” broken here) and **manual hook mode** (kernel source calls the hooks directly â€” works here). KernelSU switches to manual mode automatically when `!KPROBES`.
+**Kprobe mode** (automatic, rewrites instructions — broken here) and **manual hook mode** (kernel source calls the hooks directly — works here). KernelSU switches to manual mode automatically when `!KPROBES`.
 </details>
 
 ---
 
-## ðŸ› ï¸ Building (GitHub Actions â€” the easy way)
+## 🛠️ Building (GitHub Actions — the easy way)
 
 The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/build-kernel.yml`).
 
-1. Go to the **Actions** tab â†’ select **Build Kernel with KernelSU** â†’ click **Run workflow**
+1. Go to the **Actions** tab → select **Build Kernel with KernelSU** → click **Run workflow**
 2. Input `device`: `lancelot` or `merlin` (default `lancelot`)
-3. Wait ~30â€“40 minutes (it downloads toolchains, compiles Python 2.7 for MTK's DCT, then builds the kernel)
-4. Open the finished run â†’ **Artifacts** â†’ download
+3. Wait ~30–40 minutes (it downloads toolchains, compiles Python 2.7 for MTK's DCT, then builds the kernel)
+4. Open the finished run → **Artifacts** → download
 
 **What the workflow does automatically:**
 - Checks out the `shas-noc` branch
@@ -276,13 +276,13 @@ The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/b
 - Appends to `<device>_defconfig`:
   ```text
   CONFIG_KSU=y
-  # CONFIG_KPROBES is not set     â† THE key line (manual hook mode)
+  # CONFIG_KPROBES is not set     ← THE key line (manual hook mode)
   ```
 - **Patches the 6 hook points** in the kernel source (see the hook table above)
 - Builds with Clang 14 + GCC 4.9 prebuilts
 - Packages an **AnyKernel3** flashable zip and uploads it as an artifact
 
-### ðŸ’» Local build (advanced, Ubuntu)
+### 💻 Local build (advanced, Ubuntu)
 
 ```bash
 git clone -b shas-noc https://github.com/MAXX-2628/shas-dream-oc-mt6768-a11
@@ -320,76 +320,76 @@ zip -r9 Shas-Dream-KSU-lancelot-A11-$(date +%Y%m%d-%H%M).zip .
 
 ---
 
-## ðŸ“² Flashing
+## 📲 Flashing
 
-### âš ï¸ Critical: unzip the artifact TWICE
+### ⚠️ Critical: unzip the artifact TWICE
 
 GitHub wraps artifacts in an extra zip layer. The download contains a **folder** with the *real* flashable zip inside.
 
-- Extract the artifact â†’ open the folder â†’ copy the **inner** zip to the phone
-- **Never flash the outer artifact zip** â€” recovery will say `Invalid zip file format`
+- Extract the artifact → open the folder → copy the **inner** zip to the phone
+- **Never flash the outer artifact zip** — recovery will say `Invalid zip file format`
 
 ### Steps
 
 1. Copy the **inner** zip to the phone storage
-2. Boot **custom recovery** (TWRP / OrangeFox) â€” stock MIUI recovery rejects unsigned zips
-3. Install the zip (it only replaces the *boot* partition â€” no data wipe)
+2. Boot **custom recovery** (TWRP / OrangeFox) — stock MIUI recovery rejects unsigned zips
+3. Install the zip (it only replaces the *boot* partition — no data wipe)
 4. Reboot
 
 > Requirements: unlocked bootloader, backup your current `boot.img` first (`dd if=/dev/block/by-name/boot` in TWRP terminal), battery above ~70%.
 
 ---
 
-## ðŸ”“ Root setup (kernel-side root, no APK needed to boot)
+## 🔓 Root setup (kernel-side root, no APK needed to boot)
 
 1. Flash the kernel zip (above)
-2. Install **KernelSU Manager v0.9.5** â€” this exact APK:
+2. Install **KernelSU Manager v0.9.5** — this exact APK:
    https://github.com/tiann/KernelSU/releases/download/v0.9.5/KernelSU_v0.9.5_11872-release.apk
-3. Open the manager â†’ **Home** must show `Working` + the kernel version
-4. First root request will prompt in the manager â†’ allow (or make the app an "allowlist" entry)
+3. Open the manager → **Home** must show `Working` + the kernel version
+4. First root request will prompt in the manager → allow (or make the app an "allowlist" entry)
 5. Reboot once if grants keep failing
 
 **Manager/kernel pairing rules (very important):**
-- v0.9.5 kernel â†’ **tiann KernelSU Manager v0.9.5** only
-- KernelSU-Next kernel â†’ KernelSU-Next Manager (different protocol â€” do NOT mix!)
+- v0.9.5 kernel → **tiann KernelSU Manager v0.9.5** only
+- KernelSU-Next kernel → KernelSU-Next Manager (different protocol — do NOT mix!)
 - Official KernelSU v1.x managers are incompatible with v0.9.5 kernels
 
 > MIUI note: `adb install` fails with `INSTALL_FAILED_USER_RESTRICTED` unless
-> **Settings â†’ Developer options â†’ Install via USB** is enabled.
+> **Settings → Developer options → Install via USB** is enabled.
 
 ---
 
-## ðŸ†˜ Safe Mode (your rescue button!)
+## 🆘 Safe Mode (your rescue button!)
 
-KernelSU 0.9.5 has a built-in **Safe Mode**: press **Volume-Down 3 times during boot**, and KernelSU will boot with all root features disabled â€” handy if a module breaks your boot.
+KernelSU 0.9.5 has a built-in **Safe Mode**: press **Volume-Down 3 times during boot**, and KernelSU will boot with all root features disabled — handy if a module breaks your boot.
 
 Our 6th hook (`drivers/input/input.c`) is what enables this. And because we use **manual hooks** (kprobes off), the official warning about accidental Safe Mode triggering doesn't apply to us.
 
 ---
 
-## ðŸ—„ï¸ Full history â€” workflow runs & commits
+## 🗄️ Full history — workflow runs & commits
 
 | Run ID | What happened | Result |
 |---|---|---|
-| `31324017848` | KernelSU-Next legacy + kprobes, first NOC build | ðŸ’¥ bootloop |
-| `31359616375` | KernelSU-Next + permissive SELinux | âœ… boots, insecure |
-| `31361347555` | v0.9.5 + Clang 14 (first try, broken toolchain URL) | âš ï¸ toolchain fixed later |
-| `31362131229` | v0.9.5 + Clang 14 (AOSP clang-r450784d) | âœ… boots, âŒ root fails |
-| `31365845786` | v0.9.5 + kprobes ON (`ad24fee9`) | ðŸ’¥ bootloop (`do_undefinstr`) |
-| `31371351178` | v0.9.5 + kprobes + KASLR off (`25dd7a03`) | ðŸ’¥ bootloop (`IABT`) |
-| **`31375278717`** | **v0.9.5 + MANUAL HOOKS, no kprobes (`bceb45eb`)** | âœ… **BOOTS + ROOT WORKS** |
+| `31324017848` | KernelSU-Next legacy + kprobes, first NOC build | 💥 bootloop |
+| `31359616375` | KernelSU-Next + permissive SELinux | ✅ boots, insecure |
+| `31361347555` | v0.9.5 + Clang 14 (first try, broken toolchain URL) | ⚠️ toolchain fixed later |
+| `31362131229` | v0.9.5 + Clang 14 (AOSP clang-r450784d) | ✅ boots, ❌ root fails |
+| `31365845786` | v0.9.5 + kprobes ON (`ad24fee9`) | 💥 bootloop (`do_undefinstr`) |
+| `31371351178` | v0.9.5 + kprobes + KASLR off (`25dd7a03`) | 💥 bootloop (`IABT`) |
+| **`31375278717`** | **v0.9.5 + MANUAL HOOKS, no kprobes (`bceb45eb`)** | ✅ **BOOTS + ROOT WORKS** |
 
 **Key commits on `shas-noc`:**
-- `d531e16b` / `7096b6cc` â€” permissive SELinux experiment (reverted)
-- `ab7117f2` â€” workflow with v0.9.5 + Proton Clang 14 (bad toolchain URL â€” failed)
-- `639b95a9` â€” fixed toolchain to AOSP Clang 14 (`clang-r450784d`)
-- `ad24fee9` â€” added CONFIG_KPROBES to defconfig (bootloop!)
-- `25dd7a03` â€” disabled KASLR (still bootloop!)
-- `bceb45eb` â€” **THE FIX**: manual hooks in the build workflow, kprobes off
+- `d531e16b` / `7096b6cc` — permissive SELinux experiment (reverted)
+- `ab7117f2` — workflow with v0.9.5 + Proton Clang 14 (bad toolchain URL — failed)
+- `639b95a9` — fixed toolchain to AOSP Clang 14 (`clang-r450784d`)
+- `ad24fee9` — added CONFIG_KPROBES to defconfig (bootloop!)
+- `25dd7a03` — disabled KASLR (still bootloop!)
+- `bceb45eb` — **THE FIX**: manual hooks in the build workflow, kprobes off
 
 ---
 
-## ðŸ“œ Credits / sources
+## 📜 Credits / sources
 
 - Kernel source base: `merlin-r-oss` (Xiaomi MT6768 A11 OSS release)
 - KernelSU: https://github.com/tiann/KernelSU (tag **v0.9.5**)
