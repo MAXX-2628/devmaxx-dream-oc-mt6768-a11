@@ -1657,7 +1657,11 @@ int32_t btmtk_set_power_on(struct hci_dev *hdev, u_int8_t for_precal)
 	bdev->psm.sleep_flag = FALSE;
 	bdev->psm.wakeup_flag = FALSE;
 	bdev->psm.result = 0;
-	bdev->psm.force_on = FALSE;
+	/* Stay awake while BT is on: entering PSM sleep and racing the
+	 * fw_own_clr() wake-up on the BTIF path causes link drops and
+	 * reconnect loops ("FATAL: bgfsys_fw_own_clr error!! going to reset").
+	 */
+	bdev->psm.force_on = TRUE;
 
 #if (USE_DEVICE_NODE == 1)
 	btmtk_rx_flush();
