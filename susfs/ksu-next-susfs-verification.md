@@ -38,9 +38,13 @@ tooling expects.
 mount-tagging conveniences that susfs4ksu's newer `kernel_patches/KernelSU/
 10_enable_susfs_for_ksu.patch` (tiann-targeted, in the `susfs4ksu-414` clone) *does* define. This
 tag also adds one flag the plan doesn't list (`_SUS_MAP`) and tightens `KSU_SUSFS`'s own
-dependency to require `THREAD_INFO_IN_TASK`. **Practical implication for the target device**: if
-Redmi 9/9T's MT6768 4.14 kernel config doesn't set `THREAD_INFO_IN_TASK`, `KSU_SUSFS` won't even
-be selectable here — this needs a config check before Task 5/6 proceed, it is not guaranteed.
+dependency to require `THREAD_INFO_IN_TASK`. **RESOLVED (final whole-branch review fix round,
+2026-08-13)**: confirmed via direct read of this kernel's `arch/arm64/Kconfig` that
+`THREAD_INFO_IN_TASK` is unconditionally `select`ed for arm64 on this device (not a
+device-config-dependent optional flag) — `KSU_SUSFS` is selectable here with no action needed.
+This was not a risk in practice; a standing CI assertion (`.github/workflows/build-kernel.yml`,
+"Assert critical Kconfig flags survived defconfig resolution" step) now also guards against this
+regressing silently in future dependency-resolution changes.
 Also: without `_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT`/`_AUTO_ADD_SUS_BIND_MOUNT`, any module/bind mounts
 KSU or Magisk-style modules create will **not** be auto-hidden — they'd need manual
 `susfs add_sus_mount` calls from userspace instead of being automatic, a real behavioral
@@ -100,11 +104,22 @@ identifiers). **Real drift, not just naming**:
   `susfs_reorder_mnt_id()`, `susfs_try_umount()`, and `susfs_set_hide_sus_mnts_for_non_su_procs()`
   under that guard — but there is no `CMD_SUSFS_ADD_SUS_MOUNT` command and no call to
   `susfs_add_sus_mount()` (confirmed via `grep -n "susfs_add_sus_mount\|SUS_MOUNT"` across
-  `supercalls.c`, `setuid_hook.c`, `selinux/*.c`). **Task 4 needs to confirm** whether
-  susfs4ksu's `kernel-4.14` branch `fs/susfs.c` still requires an explicit `add_sus_mount` call to
-  populate its hide-list, or whether `susfs_set_hide_sus_mnts_for_non_su_procs()` is this
-  version's equivalent mechanism — if the former, sus-mount hiding may be non-functional out of
-  the box on this tag without additional wiring.
+  `supercalls.c`, `setuid_hook.c`, `selinux/*.c`). **RESOLVED (final whole-branch review fix
+  round, 2026-08-13)**: this splits into two independent halves, not one open question.
+  (1) Automatic mount-tagging DOES work without any dispatch command:
+  `50_add_susfs_in_kernel-4.14-mtk.patch`'s `vfs_kern_mount` hunk in `fs/namespace.c` calls
+  `susfs_is_current_ksu_domain()` and assigns `mnt_id >= DEFAULT_SUS_MNT_ID` to any mount created
+  in KSU's domain, and every mount-listing path (`show_vfsmnt`/`show_mountinfo`/`show_vfsstat`)
+  filters entries at or above that threshold — so mounts KSU itself creates are auto-hidden with
+  zero userspace involvement. (2) `susfs_add_sus_mount()` — the function a userspace tool would
+  call to register an *arbitrary, KSU-external* path as a sus mount — is genuinely unreachable:
+  confirmed by reading `kernel/supercalls.c`'s full `CMD_SUSFS_*` dispatch switch directly, there
+  is no `CMD_SUSFS_ADD_SUS_MOUNT` case at all (unlike `ADD_SUS_PATH`, `ADD_SUS_KSTAT`,
+  `ADD_TRY_UMOUNT`, etc., which are all present). Net effect: base/automatic SUS_MOUNT hiding for
+  KSU's own module mounts works; manual per-path registration via a susfs command does not exist
+  on this tag. (See also the corrected comment in `susfs/fs/susfs.c` near the
+  `susfs_is_hide_sus_mnts_for_non_su_procs_enabled` known-gap note, which previously overstated
+  this as "Base SUS_MOUNT hiding (which IS fully implemented)".)
 
 This confirms KernelSU-Next's team built this tag against a **different, non-contemporaneous
 snapshot** of susfs4ksu's API than what `susfs4ksu-414`'s `kernel_patches/KernelSU/
