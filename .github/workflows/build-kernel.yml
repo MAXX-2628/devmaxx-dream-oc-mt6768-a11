@@ -133,15 +133,21 @@ jobs:
 
           # susfs -- only the CONFIG_KSU_SUSFS_* flags that actually exist in
           # this tag's kernel/Kconfig (verified in
-          # susfs/ksu-next-susfs-verification.md, Step 1). 5 flags from the
-          # old shas-susfs defconfig do NOT exist on this tag
-          # (_HAS_MAGIC_MOUNT, _AUTO_ADD_SUS_KSU_DEFAULT_MOUNT,
-          # _AUTO_ADD_SUS_BIND_MOUNT, _SUS_OVERLAYFS,
-          # _AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT) and are dropped here --
-          # setting them would be no-ops. This tag also adds one flag the old
-          # defconfig never had (_SUS_MAP); left disabled below to preserve
-          # the old config's on/off intent for everything else without
-          # speculatively enabling new behavior.
+          # susfs/ksu-next-susfs-verification.md, Step 1). These 5 flags
+          # don't exist in this KernelSU-Next tag's Kconfig, so writing them
+          # is a no-op -- but that's not the same as "nothing lost":
+          # SUS_OVERLAYFS, AUTO_ADD_SUS_BIND_MOUNT,
+          # AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT, and AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+          # together guard ~19 hunks across
+          # 50_add_susfs_in_kernel-4.14-mtk.patch and susfs/fs/susfs.c --
+          # overlayfs-based hiding and automatic mount/bind-mount/try-umount
+          # registration are genuinely absent versus the old shas-susfs
+          # build, not just unavailable-but-harmless config lines
+          # (_HAS_MAGIC_MOUNT is the 5th missing flag, also dropped as a
+          # no-op). This tag also adds one flag the old defconfig never had
+          # (_SUS_MAP); left disabled below to preserve the old config's
+          # on/off intent for everything else without speculatively
+          # enabling new behavior.
           #
           # SUS_PATH is disabled (Task 9, run 31582626614): our vendored
           # susfs4ksu kernel-4.14 source (frozen 2025-02-23) predates this
@@ -168,6 +174,13 @@ jobs:
           # this comment previously overstated what's preserved. See
           # susfs/ksu-next-susfs-verification.md for the full flag-by-flag
           # comparison against this KSU-Next tag's actual Kconfig.
+          #
+          # WARNING: ENABLE_LOG, OPEN_REDIRECT, and SUS_MAP are not just
+          # "off" -- flipping any of these to =y will BREAK THE BUILD
+          # against this vendored susfs source (function name/signature
+          # mismatches with what KernelSU-Next's supercalls.c actually
+          # calls). Do not enable without first porting the corresponding
+          # functions properly (same discipline as Task 9's other fixes).
           cat >> arch/arm64/configs/${DEVICE}_defconfig << 'EOF'
           # susfs
           CONFIG_KSU_SUSFS=y
@@ -197,7 +210,7 @@ jobs:
           # and rationale (idempotent, safe to re-run).
           python3 susfs/hooks/apply_ksu_next_hooks.py
 
-      - name: Build kernel
+      - name: Generate defconfig
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
@@ -205,6 +218,40 @@ jobs:
           export DTC_EXT=dtc
 
           make O=out ARCH=arm64 ${DEVICE}_defconfig
+
+      - name: Assert critical Kconfig flags survived defconfig resolution
+        run: |
+          set -e
+          # Dependency resolution (e.g. CONFIG_KSU_SUSFS's new
+          # "depends on THREAD_INFO_IN_TASK" in this KernelSU-Next tag,
+          # confirmed satisfied on this kernel's arch/arm64/Kconfig -- see
+          # susfs/ksu-next-susfs-verification.md) can silently drop a flag
+          # we asked for in the ${DEVICE}_defconfig append step if some
+          # dependency isn't met. This is a standing CI guard against that
+          # happening unnoticed, not just a one-time manual check.
+          for flag in \
+            CONFIG_KSU=y \
+            CONFIG_KSU_MANUAL_HOOK=y \
+            CONFIG_KSU_SUSFS=y \
+            CONFIG_KSU_SUSFS_SUS_MOUNT=y \
+            CONFIG_KSU_SUSFS_SUS_KSTAT=y \
+            CONFIG_KSU_SUSFS_TRY_UMOUNT=y \
+            CONFIG_KSU_SUSFS_SPOOF_UNAME=y \
+            CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y \
+            CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y \
+          ; do
+            grep -qx "$flag" out/.config || { echo "FATAL: $flag missing from generated .config"; exit 1; }
+          done
+          grep -q "^# CONFIG_KPROBES is not set" out/.config || { echo "FATAL: CONFIG_KPROBES is set (expected unset -- KPROBES is broken on this MTK 4.14 kernel)"; exit 1; }
+          echo "All critical Kconfig flags verified present in out/.config"
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="$TOOLCHAINS/clang-llvm/bin:$TOOLCHAINS/gcc64-aosp/bin:$TOOLCHAINS/gcc32-aosp/bin:$PATH"
+          export DTC_EXT=dtc
+
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
