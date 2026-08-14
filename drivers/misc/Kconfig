@@ -552,13 +552,4 @@ source "drivers/misc/cxl/Kconfig"
 source "drivers/misc/mediatek/Kconfig"
 source "drivers/misc/hqsysfs/Kconfig"
 
-config WAKELOCK_BLOCKER
-	bool "Wakelock blocker driver"
-	help
-	  Allows blocking kernel wakeup sources by name via a misc
-	  device. Write comma-separated wakeup source names to
-	  /sys/class/misc/wakelock_blocker/wakelock_blocker to keep
-	  them from preventing suspend; prefix a name with '!' to
-	  remove it from the block list.
-
 endmenu
