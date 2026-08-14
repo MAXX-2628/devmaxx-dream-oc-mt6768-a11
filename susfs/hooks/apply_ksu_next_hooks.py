@@ -319,7 +319,11 @@ def patch_susfs_kconfig(root):
     gets compiled. Idempotent: skipped when KSU_SUSFS_SUS_OVERLAYFS is
     already present.
     """
-    path = os.path.join(root, "kernel", "Kconfig")
+    # The tag's kernel/Kconfig is NOT at kernel/Kconfig of the kernel tree:
+    # KernelSU-Next's setup.sh symlinks drivers/kernelsu ->
+    # KernelSU-Next/kernel, so the tag's Kconfig (with the "KernelSU - SUSFS"
+    # menu) is drivers/kernelsu/Kconfig in the checkout.
+    path = os.path.join(root, "drivers", "kernelsu", "Kconfig")
     if not os.path.isfile(path):
         print(f"ERROR: file not found: {path}", file=sys.stderr)
         sys.exit(1)
