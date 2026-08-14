@@ -158,6 +158,7 @@ struct pm_qos_request primary_display_qos_request;
 struct pm_qos_request primary_display_emi_opp_request;
 struct pm_qos_request primary_display_mm_freq_request;
 #endif
+struct pm_qos_request primary_display_cpu_dma_latency_request;
 
 static int decouple_mirror_update_rdma_config_thread(void *data);
 static int decouple_trigger_worker_thread(void *data);
@@ -3788,6 +3789,8 @@ int primary_display_init(char *lcm_name, unsigned int lcm_fps,
 	pm_qos_add_request(&primary_display_mm_freq_request,
 		PM_QOS_DISP_FREQ, PM_QOS_MM_FREQ_DEFAULT_VALUE);
 #endif
+	pm_qos_add_request(&primary_display_cpu_dma_latency_request,
+		PM_QOS_CPU_DMA_LATENCY, 0);
 
 	_primary_path_lock(__func__);
 
@@ -4748,6 +4751,8 @@ int primary_display_suspend(void)
 			MMPROFILE_FLAG_END,
 			!primary_display_is_decouple_mode(), 0);
 #endif
+	pm_qos_update_request(&primary_display_cpu_dma_latency_request,
+		PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE);
 
 	DISPCHECK("[POWER]dpmanager path power off[end]\n");
 	mmprofile_log_ex(ddp_mmp_get_events()->primary_suspend,
@@ -4936,6 +4941,7 @@ int primary_display_resume(void)
 		set_enterulps(0);
 
 	DISPCHECK("dpmanager path power on[end]\n");
+	pm_qos_update_request(&primary_display_cpu_dma_latency_request, 0);
 
 	DISPINFO("dpmanager path reset[begin]\n");
 	dpmgr_path_reset(pgc->dpmgr_handle, CMDQ_DISABLE);
