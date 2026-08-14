@@ -8098,6 +8098,12 @@ static inline struct task_group *css_tg(struct cgroup_subsys_state *css)
 	return css ? container_of(css, struct task_group, css) : NULL;
 }
 
+#ifdef CONFIG_UCLAMP_TASK_GROUP
+static void cpu_util_update_hier(struct cgroup_subsys_state *css,
+				 unsigned int clamp_id, unsigned int group_id,
+				 unsigned int value);
+#endif
+
 static struct cgroup_subsys_state *
 cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 {
@@ -8127,9 +8133,13 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 
 #ifdef CONFIG_UCLAMP_TASK_GROUP
 	{
-		const char *name = cgroup_name(css->cgroup);
+		const char *name;
+		char name_buf[64];
 		unsigned int min_value = 0;
 		unsigned int max_value = SCHED_CAPACITY_SCALE;
+
+		cgroup_name(css->cgroup, name_buf, sizeof(name_buf));
+		name = name_buf;
 
 		if (!strcmp(name, "top-app")) {
 			min_value = 768;
