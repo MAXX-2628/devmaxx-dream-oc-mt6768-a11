@@ -35,6 +35,7 @@ bool susfs_is_log_enabled __read_mostly = true;
 /* sus_path */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 static DEFINE_HASHTABLE(SUS_PATH_HLIST, 10);
+static LIST_HEAD(LH_SUS_PATH_LOOP);
 static int susfs_update_sus_path_inode(char *target_pathname) {
 	struct path p;
 	struct inode *inode = NULL;
@@ -218,6 +219,7 @@ out_copy_to_user:
 void susfs_add_sus_path_loop(void __user **user_info) {
 	struct st_susfs_sus_path info = {0};
 	struct st_susfs_sus_path_hlist *new_entry;
+	struct st_susfs_sus_path_list *loop_entry;
 	struct path path;
 	struct inode *inode = NULL;
 
@@ -255,12 +257,47 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 	spin_unlock(&susfs_spin_lock);
 	SUSFS_LOGI("target_pathname: '%s', ino: '%lu', is successfully added to SUS_PATH_HLIST via loop\n",
 				new_entry->target_pathname, new_entry->target_ino);
+
+	loop_entry = kzalloc(sizeof(struct st_susfs_sus_path_list), GFP_KERNEL);
+	if (!loop_entry) {
+		info.err = -ENOMEM;
+		goto out_path_put_path;
+	}
+	loop_entry->info.target_ino = inode->i_ino;
+	loop_entry->info.i_uid = info.i_uid;
+	loop_entry->path_len = strnlen(info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(loop_entry->info.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strncpy(loop_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	list_add_tail(&loop_entry->list, &LH_SUS_PATH_LOOP);
+	SUSFS_LOGI("target_pathname: '%s' is successfully added to LH_SUS_PATH_LOOP\n",
+				loop_entry->target_pathname);
+
 	info.err = 0;
 out_path_put_path:
 	path_put(&path);
 out_copy_to_user:
 	if (copy_to_user(&((struct st_susfs_sus_path __user *)*user_info)->err, &info.err, sizeof(info.err)))
 		info.err = -EFAULT;
+}
+
+void susfs_run_sus_path_loop(uid_t uid) {
+	struct st_susfs_sus_path_list *cursor = NULL;
+	struct path path;
+	struct inode *inode;
+
+	list_for_each_entry(cursor, &LH_SUS_PATH_LOOP, list) {
+		if (!kern_path(cursor->target_pathname, 0, &path)) {
+			inode = path.dentry->d_inode;
+			if (!(inode->i_state & INODE_STATE_SUS_PATH)) {
+				spin_lock(&inode->i_lock);
+				inode->i_state |= INODE_STATE_SUS_PATH;
+				spin_unlock(&inode->i_lock);
+			}
+			path_put(&path);
+			SUSFS_LOGI("re-flag '%s' as SUS_PATH for uid: %u\n",
+					cursor->target_pathname, uid);
+		}
+	}
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
@@ -1321,4 +1358,5 @@ void susfs_init(void) {
 
 /* No module exit is needed becuase it should never be a loadable kernel module */
 //void __init susfs_exit(void)
+
 
