@@ -78,16 +78,17 @@ static int susfs_update_sus_path_inode(char *target_pathname) {
 	return 0;
 }
 
-int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info) {
+void susfs_add_sus_path(void __user **user_info) {
 	struct st_susfs_sus_path info;
 	struct st_susfs_sus_path_hlist *new_entry, *tmp_entry;
 	struct hlist_node *tmp_node;
 	int bkt;
 	bool update_hlist = false;
 
-	if (copy_from_user(&info, user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_sus_path __user *)*user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
-		return 1;
+		info.err = -EFAULT;
+		goto out_copy_to_user;
 	}
 
 	spin_lock(&susfs_spin_lock);
@@ -104,14 +105,16 @@ int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info) {
 	new_entry = kmalloc(sizeof(struct st_susfs_sus_path_hlist), GFP_KERNEL);
 	if (!new_entry) {
 		SUSFS_LOGE("no enough memory\n");
-		return 1;
+		info.err = -ENOMEM;
+		goto out_copy_to_user;
 	}
 
 	new_entry->target_ino = info.target_ino;
 	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	if (susfs_update_sus_path_inode(new_entry->target_pathname)) {
 		kfree(new_entry);
-		return 1;
+		info.err = -EINVAL;
+		goto out_copy_to_user;
 	}
 	spin_lock(&susfs_spin_lock);
 	hash_add(SUS_PATH_HLIST, &new_entry->node, info.target_ino);
@@ -123,7 +126,10 @@ int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info) {
 				new_entry->target_ino, new_entry->target_pathname);
 	}
 	spin_unlock(&susfs_spin_lock);
-	return 0;
+	info.err = 0;
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_sus_path __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		SUSFS_LOGE("failed writing err back to userspace\n");
 }
 
 int susfs_sus_ino_for_filldir64(unsigned long ino) {
@@ -134,6 +140,127 @@ int susfs_sus_ino_for_filldir64(unsigned long ino) {
 			return 1;
 	}
 	return 0;
+}
+
+/*
+ * Backported from simonpunk/susfs4ksu commit
+ * 4abb488c0aea9fb1f2b6db23ef0bce37a0be3ddd (gki-android12-5.10 era)
+ * because KernelSU-Next v3.1.0-legacy-susfs's kernel/supercalls.c
+ * dispatches CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH /
+ * CMD_SUSFS_SET_SDCARD_ROOT_PATH / CMD_SUSFS_ADD_SUS_PATH_LOOP to these
+ * symbols, which our vendored susfs4ksu kernel-4.14 source (frozen
+ * 2025-02-23) never implemented. GKI-style AS_FLAGS_* bit storage on
+ * i_mapping->flags is translated to this tree's 4.14 convention of
+ * INODE_STATE_* bits on inode->i_state (see susfs_def.h).
+ *
+ * The recorded android_data_path/sdcard_path st_external_dir entries are
+ * informational here: this tree's patched VFS hooks
+ * (50_add_susfs_in_kernel-4.14-mtk.patch) hide anything flagged
+ * INODE_STATE_SUS_PATH for non-root user app procs regardless of which
+ * root dir it lives under, so the loop variant simply re-flags the inode
+ * and re-registers it in SUS_PATH_HLIST (for the filldir64 filter)
+ * without the GKI tree's per-uid list segregation.
+ */
+static struct st_external_dir android_data_path = {0};
+static struct st_external_dir sdcard_path = {0};
+
+void susfs_set_i_state_on_external_dir(void __user **user_info) {
+	struct path path;
+	struct inode *inode = NULL;
+	struct st_external_dir info = {0};
+
+	if (copy_from_user(&info, (struct st_external_dir __user *)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+
+	info.err = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
+	if (info.err) {
+		SUSFS_LOGE("Failed opening file '%s'\n", info.target_pathname);
+		goto out_copy_to_user;
+	}
+
+	inode = d_inode(path.dentry);
+	if (!inode) {
+		info.err = -EINVAL;
+		goto out_path_put_path;
+	}
+
+	if (info.cmd == CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH) {
+		spin_lock(&inode->i_lock);
+		inode->i_state |= INODE_STATE_ANDROID_DATA_ROOT_DIR;
+		spin_unlock(&inode->i_lock);
+		strncpy(android_data_path.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+		android_data_path.is_inited = true;
+		android_data_path.cmd = CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH;
+		SUSFS_LOGI("Set android data root dir: '%s'\n", android_data_path.target_pathname);
+		info.err = 0;
+	} else if (info.cmd == CMD_SUSFS_SET_SDCARD_ROOT_PATH) {
+		spin_lock(&inode->i_lock);
+		inode->i_state |= INODE_STATE_SDCARD_ROOT_DIR;
+		spin_unlock(&inode->i_lock);
+		strncpy(sdcard_path.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+		sdcard_path.is_inited = true;
+		sdcard_path.cmd = CMD_SUSFS_SET_SDCARD_ROOT_PATH;
+		SUSFS_LOGI("Set sdcard root dir: '%s'\n", sdcard_path.target_pathname);
+		info.err = 0;
+	} else {
+		info.err = -EINVAL;
+	}
+
+out_path_put_path:
+	path_put(&path);
+out_copy_to_user:
+	if (copy_to_user(&((struct st_external_dir __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		info.err = -EFAULT;
+}
+
+void susfs_add_sus_path_loop(void __user **user_info) {
+	struct st_susfs_sus_path info = {0};
+	struct st_susfs_sus_path_hlist *new_entry;
+	struct path path;
+	struct inode *inode = NULL;
+
+	if (copy_from_user(&info, (struct st_susfs_sus_path __user *)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+
+	info.err = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
+	if (info.err) {
+		SUSFS_LOGE("Failed opening file '%s'\n", info.target_pathname);
+		goto out_copy_to_user;
+	}
+
+	if (!path.dentry->d_inode) {
+		info.err = -EINVAL;
+		goto out_path_put_path;
+	}
+	inode = d_inode(path.dentry);
+	if (!(inode->i_state & INODE_STATE_SUS_PATH)) {
+		spin_lock(&inode->i_lock);
+		inode->i_state |= INODE_STATE_SUS_PATH;
+		spin_unlock(&inode->i_lock);
+	}
+
+	new_entry = kmalloc(sizeof(struct st_susfs_sus_path_hlist), GFP_KERNEL);
+	if (!new_entry) {
+		info.err = -ENOMEM;
+		goto out_path_put_path;
+	}
+	new_entry->target_ino = inode->i_ino;
+	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	spin_lock(&susfs_spin_lock);
+	hash_add(SUS_PATH_HLIST, &new_entry->node, new_entry->target_ino);
+	spin_unlock(&susfs_spin_lock);
+	SUSFS_LOGI("target_pathname: '%s', ino: '%lu', is successfully added to SUS_PATH_HLIST via loop\n",
+				new_entry->target_pathname, new_entry->target_ino);
+	info.err = 0;
+out_path_put_path:
+	path_put(&path);
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_sus_path __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		info.err = -EFAULT;
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 
@@ -742,6 +869,35 @@ void susfs_set_log(bool enabled) {
 		pr_info("susfs: disable logging to kernel");
 	}
 }
+
+/*
+ * CMD_SUSFS_ENABLE_LOG handler -- dispatched by KernelSU-Next
+ * v3.1.0-legacy-susfs's kernel/supercalls.c (susfs_enable_log(arg)),
+ * which our vendored susfs4ksu kernel-4.14 source never implemented.
+ * Same ABI/struct as gki-android12-5.10 commit 4abb488c0..., storing into
+ * this file's own susfs_is_log_enabled global.
+ */
+void susfs_enable_log(void __user **user_info) {
+	struct st_susfs_log info = {0};
+
+	if (copy_from_user(&info, (struct st_susfs_log __user *)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+
+	spin_lock(&susfs_spin_lock);
+	susfs_is_log_enabled = info.enabled;
+	spin_unlock(&susfs_spin_lock);
+	if (susfs_is_log_enabled) {
+		pr_info("susfs: enable logging to kernel");
+	} else {
+		pr_info("susfs: disable logging to kernel");
+	}
+	info.err = 0;
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_log __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		info.err = -EFAULT;
+}
 #endif // #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
 
 /* spoof_cmdline_or_bootconfig */
@@ -815,16 +971,17 @@ out_path_put_target:
 	return err;
 }
 
-int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
+void susfs_add_open_redirect(void __user **user_info) {
 	struct st_susfs_open_redirect info;
 	struct st_susfs_open_redirect_hlist *new_entry, *tmp_entry;
 	struct hlist_node *tmp_node;
 	int bkt;
 	bool update_hlist = false;
 
-	if (copy_from_user(&info, user_info, sizeof(info))) {
+	if (copy_from_user(&info, (struct st_susfs_open_redirect __user *)*user_info, sizeof(info))) {
 		SUSFS_LOGE("failed copying from userspace\n");
-		return 1;
+		info.err = -EFAULT;
+		goto out_copy_to_user;
 	}
 
 	spin_lock(&susfs_spin_lock);
@@ -841,7 +998,8 @@ int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
 	new_entry = kmalloc(sizeof(struct st_susfs_open_redirect_hlist), GFP_KERNEL);
 	if (!new_entry) {
 		SUSFS_LOGE("no enough memory\n");
-		return 1;
+		info.err = -ENOMEM;
+		goto out_copy_to_user;
 	}
 
 	new_entry->target_ino = info.target_ino;
@@ -850,7 +1008,8 @@ int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
 	if (susfs_update_open_redirect_inode(new_entry)) {
 		SUSFS_LOGE("failed adding path '%s' to OPEN_REDIRECT_HLIST\n", new_entry->target_pathname);
 		kfree(new_entry);
-		return 1;
+		info.err = -EINVAL;
+		goto out_copy_to_user;
 	}
 
 	spin_lock(&susfs_spin_lock);
@@ -863,7 +1022,10 @@ int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
 				new_entry->target_ino, new_entry->target_pathname, new_entry->redirected_pathname);
 	}
 	spin_unlock(&susfs_spin_lock);
-	return 0;
+	info.err = 0;
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_open_redirect __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		SUSFS_LOGE("failed writing err back to userspace\n");
 }
 
 struct filename* susfs_get_redirected_path(unsigned long ino) {
@@ -878,6 +1040,56 @@ struct filename* susfs_get_redirected_path(unsigned long ino) {
 	return ERR_PTR(-ENOENT);
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+
+/* sus_map */
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+/*
+ * CMD_SUSFS_ADD_SUS_MAP handler -- dispatched by KernelSU-Next
+ * v3.1.0-legacy-susfs's kernel/supercalls.c (susfs_add_sus_map(arg)),
+ * which our vendored susfs4ksu kernel-4.14 source never implemented.
+ * Ported from gki-android12-5.10 commit 4abb488c0..., storing the GKI
+ * AS_FLAGS_SUS_MAP i_mapping->flags bit as INODE_STATE_SUS_MAP on
+ * inode->i_state (this tree's 4.14 convention).
+ *
+ * Honest note: nothing in this kernel consumes INODE_STATE_SUS_MAP yet
+ * (the newer KSU-Next GKI trees use it in their own fs hooks), so the
+ * command is accepted, reports success, and records the flag -- same
+ * class of pre-existing capability gap as the documented AVC-log
+ * spoofing and hide-sus-mnts-for-non-su-procs globals.
+ */
+void susfs_add_sus_map(void __user **user_info) {
+	struct st_susfs_sus_map info = {0};
+	struct path path;
+	struct inode *inode = NULL;
+
+	if (copy_from_user(&info, (struct st_susfs_sus_map __user *)*user_info, sizeof(info))) {
+		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+
+	info.err = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
+	if (info.err) {
+		SUSFS_LOGE("Failed opening file '%s'\n", info.target_pathname);
+		goto out_copy_to_user;
+	}
+
+	if (!path.dentry->d_inode) {
+		info.err = -EINVAL;
+		goto out_path_put_path;
+	}
+	inode = d_inode(path.dentry);
+	spin_lock(&inode->i_lock);
+	inode->i_state |= INODE_STATE_SUS_MAP;
+	spin_unlock(&inode->i_lock);
+	SUSFS_LOGI("pathname: '%s', is flagged as INODE_STATE_SUS_MAP\n", info.target_pathname);
+	info.err = 0;
+out_path_put_path:
+	path_put(&path);
+out_copy_to_user:
+	if (copy_to_user(&((struct st_susfs_sus_map __user *)*user_info)->err, &info.err, sizeof(info.err)))
+		info.err = -EFAULT;
+}
+#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 
 /* sus_su */
 #ifdef CONFIG_KSU_SUSFS_SUS_SU
@@ -1063,6 +1275,9 @@ void susfs_get_enabled_features(void __user **user_info) {
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_MOUNT\n");
 #endif
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_PATH\n");
+#endif
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_KSTAT\n");
 #endif
@@ -1072,11 +1287,20 @@ void susfs_get_enabled_features(void __user **user_info) {
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_UNAME\n");
 #endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_ENABLE_LOG\n");
+#endif
 #ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
 	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS\n");
 #endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_OPEN_REDIRECT\n");
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MAP
+	len += scnprintf(info->enabled_features + len, SUSFS_ENABLED_FEATURES_SIZE - len, "CONFIG_KSU_SUSFS_SUS_MAP\n");
 #endif
 	info->err = 0;
 	if (copy_to_user((struct st_susfs_enabled_features __user*)*user_info, info, sizeof(*info))) {
