@@ -60,6 +60,19 @@ Anchors were verified against the real fetched target-kernel files at
 
 Idempotent: safe to run more than once per build; each patch is skipped if
 its call site is already present.
+
+SUSFS KCONFIG GAP (added for the full-fledged susfs upgrade)
+------------------------------------------------------------
+The tag's own `kernel/Kconfig` "KernelSU - SUSFS" menu ships 11 flags but is
+missing the 5 that this project's vendored susfs4ksu kernel-4.14 source and
+its `50_add_susfs_in_kernel-4.14-mtk.patch` expect:
+`KSU_SUSFS_HAS_MAGIC_MOUNT`, `KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT`,
+`KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT`, `KSU_SUSFS_SUS_OVERLAYFS`,
+`KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT`. Without the Kconfig symbols
+the defconfig writes for them are silently dropped by olddefconfig and the
+auto-add/overlayfs code in the patch never compiles. `patch_susfs_kconfig()`
+injects the missing entries into the tag's menu (idempotent); the actual
+hook call-site patching is unchanged.
 """
 
 import re
@@ -250,10 +263,99 @@ def patch_file(hook, root):
     print(f"OK    {hook['path']}: inserted '{hook['name']}' hook")
 
 
+SUSFS_KCONFIG_ENTRIES = (
+    "config KSU_SUSFS_HAS_MAGIC_MOUNT\n"
+    "    bool \"Enable to add a magic mount\"\n"
+    "    depends on KSU_SUSFS\n"
+    "    default y\n"
+    "    help\n"
+    "        - Allow adding magic mounts\n"
+    "        - Requires magisk mode\n"
+    "        - Effective on all processes.\n"
+    "\n"
+    "config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT\n"
+    "    bool \"Enable to auto add ksu's default mount(s) to sus_mount\"\n"
+    "    depends on KSU_SUSFS\n"
+    "    default y\n"
+    "    help\n"
+    "        - Automatically add ksu's default mount(s) to sus_mount at boot or when new ksu mount created.\n"
+    "        - Effective on all processes.\n"
+    "\n"
+    "config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT\n"
+    "    bool \"Enable to auto add bind mount to sus_mount\"\n"
+    "    depends on KSU_SUSFS\n"
+    "    default y\n"
+    "    help\n"
+    "        - Automatically add all bind mounts to sus_mount\n"
+    "        - Effective on all processes.\n"
+    "\n"
+    "config KSU_SUSFS_SUS_OVERLAYFS\n"
+    "    bool \"Enable to hide susfs from overlayfs\"\n"
+    "    depends on KSU_SUSFS\n"
+    "    default y\n"
+    "    help\n"
+    "        - Allow hiding susfs from overlayfs\n"
+    "        - Effective on all processes.\n"
+    "\n"
+    "config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT\n"
+    "    bool \"Enable to auto add try_umount for bind mount\"\n"
+    "    depends on KSU_SUSFS\n"
+    "    default y\n"
+    "    help\n"
+    "        - Automatically add try_umount for all bind mounts\n"
+    "        - Effective on all processes.\n"
+)
+
+SUSFS_KCONFIG_MARKER = "KSU_SUSFS_SUS_OVERLAYFS"
+
+
+def patch_susfs_kconfig(root):
+    """
+    Inject the 5 susfs Kconfig flags missing from KSU-Next tag
+    v3.1.0-legacy-susfs's kernel/Kconfig into the "KernelSU - SUSFS" menu
+    (right after the SUS_MAP entry, before its endmenu). Without them,
+    olddefconfig silently drops the defconfig settings and the
+    auto-add/overlayfs code in 50_add_susfs_in_kernel-4.14-mtk.patch never
+    gets compiled. Idempotent: skipped when KSU_SUSFS_SUS_OVERLAYFS is
+    already present.
+    """
+    path = os.path.join(root, "kernel", "Kconfig")
+    if not os.path.isfile(path):
+        print(f"ERROR: file not found: {path}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(path, "r", encoding="utf-8", errors="surrogateescape") as f:
+        content = f.read()
+
+    if SUSFS_KCONFIG_MARKER in content:
+        print(f"SKIP  kernel/Kconfig: susfs flags already present")
+        return
+
+    anchor = re.compile(
+        r"(config KSU_SUSFS_SUS_MAP[\s\S]*?\n\nendmenu)"
+    )
+    match = anchor.search(content)
+    if not match:
+        print(
+            "ERROR: 'KernelSU - SUSFS' menu (KSU_SUSFS_SUS_MAP block + "
+            "endmenu) not found in kernel/Kconfig",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    content = content[:match.end(1)] + "\n" + SUSFS_KCONFIG_ENTRIES + content[match.end(1):]
+
+    with open(path, "w", encoding="utf-8", errors="surrogateescape") as f:
+        f.write(content)
+
+    print("OK    kernel/Kconfig: injected 5 missing susfs Kconfig flags")
+
+
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "."
     for hook in HOOKS:
         patch_file(hook, root)
+    patch_susfs_kconfig(root)
     print("apply_ksu_next_hooks.py: all hooks processed.")
 
 
