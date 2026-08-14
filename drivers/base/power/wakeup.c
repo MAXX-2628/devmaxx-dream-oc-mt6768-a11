@@ -583,11 +583,6 @@ static void wakeup_source_activate(struct wakeup_source *ws)
 			"unregistered wakeup source\n"))
 		return;
 
-#ifdef CONFIG_WAKELOCK_BLOCKER
-	if (wakelock_blocker_is_blocked(ws->name))
-		return;
-#endif
-
 	ws->active = true;
 	ws->active_count++;
 	ws->last_time = ktime_get();
