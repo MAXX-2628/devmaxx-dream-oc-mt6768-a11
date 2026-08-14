@@ -17,6 +17,7 @@
 
 #include <linux/module.h>
 #include <linux/kernel.h>
+#include <linux/sizes.h>
 #include <linux/bio.h>
 #include <linux/bitops.h>
 #include <linux/blkdev.h>
@@ -2081,6 +2082,27 @@ static int zram_add(void)
 	add_disk(zram->disk);
 
 	strlcpy(zram->compressor, default_compressor, sizeof(zram->compressor));
+
+	down_write(&zram->init_lock);
+	zram->disksize = PAGE_ALIGN(SZ_2G);
+	if (!zram_meta_alloc(zram, zram->disksize)) {
+		pr_err("Error allocating meta for device %d\n", device_id);
+	} else {
+		struct zcomp *comp = zcomp_create(zram->compressor);
+
+		if (IS_ERR(comp)) {
+			pr_err("Cannot initialise %s compressing backend\n",
+				zram->compressor);
+			zram_meta_free(zram, zram->disksize);
+			zram->disksize = 0;
+		} else {
+			zram->comp = comp;
+			barrier();
+			set_capacity(zram->disk, zram->disksize >> SECTOR_SHIFT);
+			revalidate_disk(zram->disk);
+		}
+	}
+	up_write(&zram->init_lock);
 
 	zram_debugfs_register(zram);
 
