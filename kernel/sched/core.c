@@ -13,6 +13,7 @@
 #include <linux/sched/hotplug.h>
 #include <linux/wait_bit.h>
 #include <linux/cpuset.h>
+#include <linux/cgroup.h>
 #include <linux/delayacct.h>
 #include <linux/init_task.h>
 #include <linux/context_tracking.h>
@@ -8123,6 +8124,52 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 
 	if (parent)
 		sched_online_group(tg, parent);
+
+#ifdef CONFIG_UCLAMP_TASK_GROUP
+	{
+		const char *name = cgroup_name(css->cgroup);
+		unsigned int min_value = 0;
+		unsigned int max_value = SCHED_CAPACITY_SCALE;
+
+		if (!strcmp(name, "top-app")) {
+			min_value = 768;
+		} else if (!strcmp(name, "foreground")) {
+			min_value = 512;
+		} else if (!strcmp(name, "background")) {
+			max_value = 128;
+		} else if (!strcmp(name, "system-background")) {
+			max_value = 256;
+		} else {
+			return 0;
+		}
+
+		if (!opp_capacity_tbl_ready)
+			init_opp_capacity_tbl();
+		min_value = find_fit_capacity(min_value);
+		max_value = find_fit_capacity(max_value);
+
+		mutex_lock(&uclamp_mutex);
+		rcu_read_lock();
+
+		if (tg->uclamp[UCLAMP_MIN].value != min_value) {
+			uclamp_group_get(NULL, css, &tg->uclamp[UCLAMP_MIN],
+					 UCLAMP_MIN, min_value);
+			cpu_util_update_hier(css, UCLAMP_MIN,
+					     tg->uclamp[UCLAMP_MIN].group_id,
+					     min_value);
+		}
+		if (tg->uclamp[UCLAMP_MAX].value != max_value) {
+			uclamp_group_get(NULL, css, &tg->uclamp[UCLAMP_MAX],
+					 UCLAMP_MAX, max_value);
+			cpu_util_update_hier(css, UCLAMP_MAX,
+					     tg->uclamp[UCLAMP_MAX].group_id,
+					     max_value);
+		}
+
+		rcu_read_unlock();
+		mutex_unlock(&uclamp_mutex);
+	}
+#endif
 	return 0;
 }
 
