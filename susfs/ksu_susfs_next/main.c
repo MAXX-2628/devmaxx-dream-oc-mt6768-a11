@@ -58,20 +58,21 @@
  * Reachable commands on THIS kernel build (susfs/ksu-next-susfs-verification.md
  * + kernel/supercalls.c's actual #ifdef CONFIG_KSU_SUSFS_* guards, cross
  * checked against build-kernel.yml's defconfig-append step on
- * shas-susfs-next): SUS_MOUNT (hide_sus_mnts_for_non_su_procs only --
- * add_sus_mount itself has NO dispatch case in this kernel at all, verified
- * by grepping the live supercalls.c: there is no
- * "cmd == CMD_SUSFS_ADD_SUS_MOUNT" anywhere in it), SUS_KSTAT, TRY_UMOUNT,
- * SPOOF_UNAME, SPOOF_CMDLINE_OR_BOOTCONFIG, plus the two commands that are
- * unconditionally compiled whenever CONFIG_KSU_SUSFS=y regardless of any
- * sub-flag (avc_log_spoofing, show version/variant/enabled_features).
- * SUS_PATH, ENABLE_LOG, OPEN_REDIRECT, SUS_MAP are off in this build's
- * defconfig -- their CLI verbs are kept but stubbed to a clear
- * "not supported on this build" error rather than silently no-op'ing.
- * sus_su and run_try_umount (present in the old prctl tool) have NO
- * dispatch case in this kernel's supercalls.c at all -- not even
- * Kconfig-gated, just structurally absent from this KSU-Next tag's susfs
- * port -- so they are stubbed the same way.
+ * shas-susfs-next): SUS_PATH (add_sus_path, add_sus_path_loop,
+ * set_android_data_root_path, set_sdcard_root_path), SUS_MOUNT
+ * (hide_sus_mnts_for_non_su_procs only -- add_sus_mount itself has NO
+ * dispatch case in this kernel at all, verified by grepping the live
+ * supercalls.c: there is no "cmd == CMD_SUSFS_ADD_SUS_MOUNT" anywhere in
+ * it; automatic sus-mount hiding for KSU's own module mounts and bind
+ * mounts works via the config-guarded auto-add machinery instead),
+ * SUS_KSTAT, TRY_UMOUNT, SPOOF_UNAME, SPOOF_CMDLINE_OR_BOOTCONFIG,
+ * ENABLE_LOG (enable_log), OPEN_REDIRECT (add_open_redirect), SUS_MAP
+ * (add_sus_map), plus the commands that are unconditionally compiled
+ * whenever CONFIG_KSU_SUSFS=y regardless of any sub-flag
+ * (avc_log_spoofing, show version/variant/enabled_features).
+ * sus_su and run_try_umount have NO dispatch case in this kernel's
+ * supercalls.c at all -- not even Kconfig-gated, just structurally absent
+ * from this KSU-Next tag's susfs port -- so they are stubbed the same way.
  */
 #include <stdio.h>
 #include <unistd.h>
@@ -104,6 +105,9 @@
  * IDs this tool actually uses (reachable or explicitly stubbed) are
  * defined here. */
 #define CMD_SUSFS_ADD_SUS_PATH 0x55550
+#define CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH 0x55551
+#define CMD_SUSFS_SET_SDCARD_ROOT_PATH 0x55552
+#define CMD_SUSFS_ADD_SUS_PATH_LOOP 0x55553
 #define CMD_SUSFS_ADD_SUS_MOUNT 0x55560
 #define CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS 0x55561
 #define CMD_SUSFS_ADD_SUS_KSTAT 0x55570
@@ -118,14 +122,7 @@
 #define CMD_SUSFS_SHOW_ENABLED_FEATURES 0x555e2
 #define CMD_SUSFS_SHOW_VARIANT 0x555e3
 #define CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING 0x60010
-/* Note: CMD_SUSFS_ADD_SUS_MAP, CMD_SUSFS_ADD_SUS_PATH_LOOP,
- * CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH, CMD_SUSFS_SET_SDCARD_ROOT_PATH are
- * deliberately NOT defined here -- they don't exist in the vendored
- * susfs/include/linux/susfs_def.h on shas-susfs-next at all (grepped
- * directly, zero matches), only referenced by kernel/supercalls.c's SUS_PATH
- * dispatch block, which is itself dead code while SUS_PATH is off. Since
- * their stubs below never call susfs_syscall(), no wire-format constant is
- * needed for them, so none is fabricated here. */
+#define CMD_SUSFS_ADD_SUS_MAP 0x60020
 
 #define SUSFS_MAX_LEN_PATHNAME 256
 #define SUSFS_ENABLED_FEATURES_SIZE 8192
@@ -230,6 +227,46 @@ struct st_susfs_version {
 	int err;
 };
 
+/* --- Wire-format structs for the commands the full-fledged susfs upgrade
+ * (Task: "make KernelSU-Next full-fledged") enabled in this build. All
+ * field-for-field verified against susfs/include/linux/susfs.h on
+ * shas-susfs-next. Note the `err` writeback: every handler below is
+ * dispatched as fn(arg) with arg == void __user ** by supercalls.c, and
+ * our fs/susfs.c implementations copy `err` back into the caller's
+ * struct, so these (unlike add_sus_kstat/try_umount/uname/cmdline) DO
+ * have real kernel feedback. */
+
+struct st_susfs_sus_path {
+	unsigned long           target_ino;
+	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	unsigned int            i_uid;
+	int                     err;
+};
+
+struct st_external_dir {
+	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	bool                    is_inited;
+	int                     cmd;
+	int                     err;
+};
+
+struct st_susfs_log {
+	bool                    enabled;
+	int                     err;
+};
+
+struct st_susfs_open_redirect {
+	unsigned long           target_ino;
+	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	char                    redirected_pathname[SUSFS_MAX_LEN_PATHNAME];
+	int                     err;
+};
+
+struct st_susfs_sus_map {
+	char                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	int                     err;
+};
+
 /**********************
  ** Define Functions **
  **********************/
@@ -321,10 +358,31 @@ static void print_help(void) {
 	log("\n");
 	log("        show <version|enabled_features|variant>\n");
 	log("\n");
-	log("    -- Not supported on this kernel build (Kconfig-disabled or absent from this KSU-Next\n");
-	log("       tag's susfs port entirely) -- these will print an error and exit 1, not silently no-op:\n");
-	log("        add_sus_path, add_sus_path_loop, add_sus_mount, add_open_redirect, enable_log,\n");
-	log("        add_sus_map, set_android_data_root_path, set_sdcard_root_path, sus_su, run_try_umount\n");
+	log("        add_sus_path <ino> <path>\n");
+	log("        add_sus_path_loop <path>\n");
+	log("         |--> Hide the given path (real behavioral effect on this 4.14 build: fs/susfs.c\n");
+	log("              re-resolves the path in-kernel and flags its inode; <ino> is advisory).\n");
+	log("\n");
+	log("        set_android_data_root_path <path>\n");
+	log("        set_sdcard_root_path <path>\n");
+	log("         |--> Accepted and reported by the kernel (KSU-Next tag dispatch); records the\n");
+	log("              root dir and flags its inode -- nothing on this 4.14 build consumes the\n");
+	log("              recorded entries yet, see kernel-side notes in fs/susfs.c.\n");
+	log("\n");
+	log("        enable_log <0|1>\n");
+	log("         |--> Toggle susfs kernel logging (real behavioral effect).\n");
+	log("\n");
+	log("        add_open_redirect <ino> <target_path> <redirected_path>\n");
+	log("         |--> Redirect opens of <target_path> to <redirected_path> (real behavioral\n");
+	log("              effect; uid < 2000 only, experimental).\n");
+	log("\n");
+	log("        add_sus_map <path>\n");
+	log("         |--> Accepted and flag recorded by the kernel; nothing on this 4.14 build\n");
+	log("              consumes INODE_STATE_SUS_MAP yet (see kernel-side notes in fs/susfs.c).\n");
+	log("\n");
+	log("    -- Not supported on this kernel build (absent from this KSU-Next tag's susfs port\n");
+	log("       entirely -- no dispatch case in kernel/supercalls.c at all):\n");
+	log("        add_sus_mount, sus_su, run_try_umount\n");
 }
 
 /*******************
@@ -682,29 +740,179 @@ int main(int argc, char *argv[]) {
 		print_help();
 		return 1;
 
-	/* ---- Not reachable on this kernel build: Kconfig-disabled ---- */
+	/* ---- Reachable on this kernel build: full-fledged susfs upgrade ---- */
 
-	} else if (argc >= 2 && !strcmp(argv[1], "add_sus_path")) {
-		NOT_SUPPORTED("add_sus_path"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "add_sus_path_loop")) {
-		NOT_SUPPORTED("add_sus_path_loop"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "set_android_data_root_path")) {
-		NOT_SUPPORTED("set_android_data_root_path"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "set_sdcard_root_path")) {
-		NOT_SUPPORTED("set_sdcard_root_path"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "add_sus_mount")) {
-		NOT_SUPPORTED("add_sus_mount"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "enable_log")) {
-		NOT_SUPPORTED("enable_log"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "add_open_redirect")) {
-		NOT_SUPPORTED("add_open_redirect"); return 1;
-	} else if (argc >= 2 && !strcmp(argv[1], "add_sus_map")) {
-		NOT_SUPPORTED("add_sus_map"); return 1;
+	} else if (argc == 4 && !strcmp(argv[1], "add_sus_path")) {
+		struct st_susfs_sus_path info = {0};
+		struct stat sb;
+		char *endptr;
+		unsigned long ino;
+
+		if (get_file_stat(argv[3], &sb)) {
+			log("[-] Failed to get stat from path: '%s'\n", argv[3]);
+			return 1;
+		}
+		if (strcmp(argv[2], "default")) {
+			ino = strtoul(argv[2], &endptr, 10);
+			if (*endptr != '\0') { print_help(); return 1; }
+		} else {
+			ino = sb.st_ino;
+		}
+		info.target_ino = ino;
+		strncpy(info.target_pathname, argv[3], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.i_uid = 0;
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_ADD_SUS_PATH, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] add_sus_path got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] add_sus_path failed for '%s', err=%d\n", argv[3], info.err);
+			return 1;
+		}
+		log("[+] add_sus_path done for '%s'\n", argv[3]);
+		return 0;
+
+	} else if (argc == 3 && !strcmp(argv[1], "add_sus_path_loop")) {
+		struct st_susfs_sus_path info = {0};
+		struct stat sb;
+
+		if (get_file_stat(argv[2], &sb)) {
+			log("[-] Failed to get stat from path: '%s'\n", argv[2]);
+			return 1;
+		}
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_ADD_SUS_PATH_LOOP, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] add_sus_path_loop got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] add_sus_path_loop failed for '%s', err=%d\n", argv[2], info.err);
+			return 1;
+		}
+		log("[+] add_sus_path_loop done for '%s'\n", argv[2]);
+		return 0;
+
+	} else if (argc == 3 && !strcmp(argv[1], "set_android_data_root_path")) {
+		struct st_external_dir info = {0};
+
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.cmd = CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH;
+		info.is_inited = true;
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_SET_ANDROID_DATA_ROOT_PATH, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] set_android_data_root_path got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] set_android_data_root_path failed for '%s', err=%d\n", argv[2], info.err);
+			return 1;
+		}
+		log("[+] android data root dir set to '%s'\n", argv[2]);
+		return 0;
+
+	} else if (argc == 3 && !strcmp(argv[1], "set_sdcard_root_path")) {
+		struct st_external_dir info = {0};
+
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.cmd = CMD_SUSFS_SET_SDCARD_ROOT_PATH;
+		info.is_inited = true;
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_SET_SDCARD_ROOT_PATH, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] set_sdcard_root_path got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] set_sdcard_root_path failed for '%s', err=%d\n", argv[2], info.err);
+			return 1;
+		}
+		log("[+] sdcard root dir set to '%s'\n", argv[2]);
+		return 0;
+
+	} else if (argc == 3 && !strcmp(argv[1], "enable_log")) {
+		struct st_susfs_log info = {0};
+		bool enabled;
+
+		if (parse_bool_arg(argv[2], &enabled)) { print_help(); return 1; }
+		info.enabled = enabled;
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_ENABLE_LOG, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] enable_log got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] enable_log failed, err=%d\n", info.err);
+			return 1;
+		}
+		log("[+] susfs kernel logging %s\n", enabled ? "enabled" : "disabled");
+		return 0;
+
+	} else if (argc == 5 && !strcmp(argv[1], "add_open_redirect")) {
+		struct st_susfs_open_redirect info = {0};
+		char *endptr;
+		unsigned long ino;
+
+		ino = strtoul(argv[2], &endptr, 10);
+		if (*endptr != '\0') { print_help(); return 1; }
+		info.target_ino = ino;
+		strncpy(info.target_pathname, argv[3], SUSFS_MAX_LEN_PATHNAME - 1);
+		strncpy(info.redirected_pathname, argv[4], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_ADD_OPEN_REDIRECT, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] add_open_redirect got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] add_open_redirect failed for '%s', err=%d\n", argv[3], info.err);
+			return 1;
+		}
+		log("[+] open_redirect set: '%s' -> '%s'\n", argv[3], argv[4]);
+		return 0;
+
+	} else if (argc == 3 && !strcmp(argv[1], "add_sus_map")) {
+		struct st_susfs_sus_map info = {0};
+
+		strncpy(info.target_pathname, argv[2], SUSFS_MAX_LEN_PATHNAME - 1);
+		info.err = SUSFS_ERR_NO_RESPONSE;
+		susfs_syscall(CMD_SUSFS_ADD_SUS_MAP, &info);
+		if (info.err == SUSFS_ERR_NO_RESPONSE) {
+			log("[-] add_sus_map got no response from the kernel -- "
+				"CONFIG_KSU_SUSFS may be off, the reboot hook may not be applied, or the "
+				"wrong kernel is running\n");
+			return 1;
+		}
+		if (info.err) {
+			log("[-] add_sus_map failed for '%s', err=%d\n", argv[2], info.err);
+			return 1;
+		}
+		log("[+] add_sus_map done for '%s' (flag recorded; see kernel-side notes)\n", argv[2]);
+		return 0;
 
 	/* ---- Not reachable: absent from this KSU-Next tag's susfs port
 	 * entirely (no dispatch case in kernel/supercalls.c at all, verified
 	 * directly -- not even Kconfig-gated) ---- */
 
+	} else if (argc >= 2 && !strcmp(argv[1], "add_sus_mount")) {
+		NOT_SUPPORTED("add_sus_mount"); return 1;
 	} else if (argc >= 2 && !strcmp(argv[1], "sus_su")) {
 		NOT_SUPPORTED("sus_su"); return 1;
 	} else if (argc >= 2 && !strcmp(argv[1], "run_try_umount")) {
