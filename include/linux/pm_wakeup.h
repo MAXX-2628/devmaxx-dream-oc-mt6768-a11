@@ -94,6 +94,10 @@ static inline bool device_may_wakeup(struct device *dev)
 
 /* drivers/base/power/wakeup.c */
 extern void wakeup_source_prepare(struct wakeup_source *ws, const char *name);
+
+#ifdef CONFIG_WAKELOCK_BLOCKER
+extern bool wakelock_blocker_is_blocked(const char *name);
+#endif
 extern struct wakeup_source *wakeup_source_create(const char *name);
 extern void wakeup_source_drop(struct wakeup_source *ws);
 extern void wakeup_source_destroy(struct wakeup_source *ws);
