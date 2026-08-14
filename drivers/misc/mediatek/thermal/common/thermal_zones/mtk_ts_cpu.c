@@ -852,7 +852,7 @@ struct file *file, const char __user *buffer, size_t count, loff_t *data)
 
 
 #if THERMAL_GPIO_OUT_TOGGLE
-static int g_trigger_temp = 95000;	/* default 95 deg */
+static int g_trigger_temp = 97000;	/* default 97 deg */
 static int g_GPIO_out_enable;	/* 0:disable */
 static int g_GPIO_already_set;
 
