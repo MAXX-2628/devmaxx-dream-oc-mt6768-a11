@@ -154,6 +154,7 @@ struct st_sus_su {
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 void susfs_add_sus_path(void __user **user_info);
 void susfs_add_sus_path_loop(void __user **user_info);
+void susfs_run_sus_path_loop(uid_t uid);
 void susfs_set_i_state_on_external_dir(void __user **user_info);
 int susfs_sus_ino_for_filldir64(unsigned long ino);
 #endif
@@ -259,3 +260,4 @@ void susfs_show_version(void __user **user_info);
 void susfs_init(void);
 
 #endif
+
