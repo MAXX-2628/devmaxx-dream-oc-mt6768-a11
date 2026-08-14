@@ -131,69 +131,44 @@ jobs:
           echo "# CONFIG_KPROBES is not set" >> arch/arm64/configs/${DEVICE}_defconfig
           grep -q "^CONFIG_KALLSYMS=y" arch/arm64/configs/${DEVICE}_defconfig || echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/${DEVICE}_defconfig
 
-          # susfs -- only the CONFIG_KSU_SUSFS_* flags that actually exist in
-          # this tag's kernel/Kconfig (verified in
-          # susfs/ksu-next-susfs-verification.md, Step 1). These 5 flags
-          # don't exist in this KernelSU-Next tag's Kconfig, so writing them
-          # is a no-op -- but that's not the same as "nothing lost":
-          # SUS_OVERLAYFS, AUTO_ADD_SUS_BIND_MOUNT,
-          # AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT, and AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
-          # together guard ~19 hunks across
-          # 50_add_susfs_in_kernel-4.14-mtk.patch and susfs/fs/susfs.c --
-          # overlayfs-based hiding and automatic mount/bind-mount/try-umount
-          # registration are genuinely absent versus the old shas-susfs
-          # build, not just unavailable-but-harmless config lines
-          # (_HAS_MAGIC_MOUNT is the 5th missing flag, also dropped as a
-          # no-op). This tag also adds one flag the old defconfig never had
-          # (_SUS_MAP); left disabled below to preserve the old config's
-          # on/off intent for everything else without speculatively
-          # enabling new behavior.
-          #
-          # SUS_PATH is disabled (Task 9, run 31582626614): our vendored
-          # susfs4ksu kernel-4.14 source (frozen 2025-02-23) predates this
-          # KSU-Next tag's kernel/supercalls.c, which under
-          # #ifdef CONFIG_KSU_SUSFS_SUS_PATH also calls
-          # susfs_add_sus_path_loop() / susfs_set_i_state_on_external_dir()
-          # -- newer _loop/_root_path variants our vendored fs/susfs.c never
-          # implemented. The design doc (SUSFS-HANDOFF.md Sec.4) already
-          # flagged this flag "NOT recommended, but harmless"; disabling it
-          # avoids porting 3 more functions/cmd-IDs for a feature that was
-          # optional to begin with.
-          #
-          # CORRECTION (Task 9, round 5 review): this IS a real feature
-          # regression versus the old shas-susfs build, not a no-op --
-          # shas-susfs had CONFIG_KSU_SUSFS_SUS_PATH=y. Disabling the flag
-          # removes fs/susfs.c's entire sus_path block (susfs_add_sus_path
-          # included, lines ~35-138 -- confirmed by reading the actual
-          # #ifdef CONFIG_KSU_SUSFS_SUS_PATH .. #endif span), so no sus_path
-          # hiding of any kind survives, basic or otherwise. It is NOT
-          # "still compiled in via SUS_MOUNT/etc" as an earlier version of
-          # this comment claimed -- SUS_MOUNT hides mount entries, a
-          # different mechanism that does not substitute for path hiding.
-          # The decision to disable it stands (see reasoning above), but
-          # this comment previously overstated what's preserved. See
-          # susfs/ksu-next-susfs-verification.md for the full flag-by-flag
-          # comparison against this KSU-Next tag's actual Kconfig.
-          #
-          # WARNING: ENABLE_LOG, OPEN_REDIRECT, and SUS_MAP are not just
-          # "off" -- flipping any of these to =y will BREAK THE BUILD
-          # against this vendored susfs source (function name/signature
-          # mismatches with what KernelSU-Next's supercalls.c actually
-          # calls). Do not enable without first porting the corresponding
-          # functions properly (same discipline as Task 9's other fixes).
+          # susfs -- full-fledged set (upgrade for "make KernelSU-Next full
+          # fledged"). The kernel-side gaps vs this tag's dispatch were
+          # closed in the vendored susfs source (susfs/fs/susfs.c +
+          # include/linux/susfs{,def}.h: ported susfs_add_sus_path_loop,
+          # susfs_set_i_state_on_external_dir, susfs_enable_log,
+          # susfs_add_sus_map from susfs4ksu gki-android12-5.10
+          # 4abb488c0..., and aligned the dispatched add_sus_path /
+          # add_open_redirect to the tag's void __user ** convention).
+          # The 5 flags this tag's kernel/Kconfig lacks (HAS_MAGIC_MOUNT,
+          # AUTO_ADD_SUS_KSU_DEFAULT_MOUNT, AUTO_ADD_SUS_BIND_MOUNT,
+          # SUS_OVERLAYFS, AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT) are
+          # injected into kernel/Kconfig by
+          # susfs/hooks/apply_ksu_next_hooks.py (see its docstring).
+          # CONFIG_OVERLAY_FS is on so the MTK-4.14 patch's
+          # ovl_path_lowerdata hiding hunks (fs/overlayfs/{inode,readdir}.c)
+          # actually compile. Note: add_sus_mount the COMMAND still has no
+          # dispatch case in this tag's supercalls.c -- automatic sus-mount
+          # tagging (ksu default mounts + bind mounts + try_umount) is
+          # handled by the auto-add machinery these flags enable instead.
           cat >> arch/arm64/configs/${DEVICE}_defconfig << 'EOF'
           # susfs
           CONFIG_KSU_SUSFS=y
-          # CONFIG_KSU_SUSFS_SUS_PATH is not set
+          CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
           CONFIG_KSU_SUSFS_SUS_MOUNT=y
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
           CONFIG_KSU_SUSFS_TRY_UMOUNT=y
           CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
           CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
           CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          # CONFIG_KSU_SUSFS_ENABLE_LOG is not set
-          # CONFIG_KSU_SUSFS_OPEN_REDIRECT is not set
-          # CONFIG_KSU_SUSFS_SUS_MAP is not set
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          CONFIG_KSU_SUSFS_SUS_MAP=y
+          CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y
+          CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y
+          CONFIG_OVERLAY_FS=y
           EOF
 
           tail -20 arch/arm64/configs/${DEVICE}_defconfig
@@ -233,12 +208,22 @@ jobs:
             CONFIG_KSU=y \
             CONFIG_KSU_MANUAL_HOOK=y \
             CONFIG_KSU_SUSFS=y \
+            CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT=y \
+            CONFIG_KSU_SUSFS_SUS_PATH=y \
             CONFIG_KSU_SUSFS_SUS_MOUNT=y \
             CONFIG_KSU_SUSFS_SUS_KSTAT=y \
             CONFIG_KSU_SUSFS_TRY_UMOUNT=y \
             CONFIG_KSU_SUSFS_SPOOF_UNAME=y \
+            CONFIG_KSU_SUSFS_ENABLE_LOG=y \
             CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y \
             CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y \
+            CONFIG_KSU_SUSFS_OPEN_REDIRECT=y \
+            CONFIG_KSU_SUSFS_SUS_MAP=y \
+            CONFIG_KSU_SUSFS_SUS_OVERLAYFS=y \
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT=y \
+            CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y \
+            CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y \
+            CONFIG_OVERLAY_FS=y \
           ; do
             grep -qx "$flag" out/.config || { echo "FATAL: $flag missing from generated .config"; exit 1; }
           done
