@@ -902,6 +902,8 @@ void charger_manager_set_prop_system_temp_level(int temp_level)
 
 	if (pinfo->system_temp_level == 0)
 		thermal_icl_ua = -1;
+	if (thermal_icl_ua > 0 && thermal_icl_ua < 1500000)
+		thermal_icl_ua = 1500000;
 	if (thermal_icl_ua == 500000) {
 		thermal_is_500 = true;
 	} else {
