@@ -220,7 +220,7 @@ struct st_susfs_log {
 	bool	enabled;
 	int	err;
 };
-#endif
+
 void susfs_set_log(bool enabled);
 void susfs_enable_log(void __user **user_info);
 #endif
