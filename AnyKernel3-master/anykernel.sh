@@ -1,10 +1,10 @@
-# AnyKernel3 Ramdisk Mod Script
+﻿# AnyKernel3 Ramdisk Mod Script
 # osm0sis @ xda-developers
 
 ## AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=Shas Dream Project by dev-maxx for J💗K
+kernel.string=DevMaxx Dream Project (originally Shas Dream Project) - by dev-maxx, for JK
 do.devicecheck=0
 do.modules=0
 do.systemless=1
@@ -58,5 +58,6 @@ write_boot;
 
 #flash_boot;
 ## end vendor_boot install
+
 
 
