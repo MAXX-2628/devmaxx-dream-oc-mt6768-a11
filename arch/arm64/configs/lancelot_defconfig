@@ -1,5 +1,5 @@
-CONFIG_CROSS_COMPILE="aarch64-linux-android-"
-CONFIG_LOCALVERSION="-shas-dream-lancelot-a11-customrom-a11"
+﻿CONFIG_CROSS_COMPILE="aarch64-linux-android-"
+CONFIG_LOCALVERSION="-devmaxx-dream-lancelot-a11-customrom-a11"
 # CONFIG_FHANDLE is not set
 CONFIG_IKHEADERS=y
 CONFIG_LOG_BUF_SHIFT=17
@@ -472,3 +472,4 @@ CONFIG_DEFAULT_DEADLINE=y
 CONFIG_MTK_SLBC=y
 CONFIG_MTK_SLBC_MMSRAM=y
 CONFIG_SW_SYNC64=y
+
