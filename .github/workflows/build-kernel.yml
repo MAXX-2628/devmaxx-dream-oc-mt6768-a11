@@ -1,4 +1,4 @@
-name: Build Kernel with KernelSU
+﻿name: Build Kernel with KernelSU
 
 on:
   workflow_dispatch:
@@ -224,7 +224,7 @@ jobs:
             rm -f *.zip *-dtb
             cp ../$IMAGE Image.gz-dtb
             DATE=$(date "+%Y%m%d-%H%M")
-            ZIPNAME="Shas-Dream-KSU-${DEVICE}-A11"
+            ZIPNAME="DevMaxx-JK-KSU-${DEVICE}-A11"
             zip -r9 "$ZIPNAME-${DATE}.zip" .
             echo "ZIP_FILE=AnyKernel3-master/$ZIPNAME-${DATE}.zip" >> $GITHUB_ENV
           else
@@ -235,5 +235,5 @@ jobs:
       - name: Upload flashable zip
         uses: actions/upload-artifact@v4
         with:
-          name: Shas-Dream-KSU-${{ env.DEVICE }}-A11
+          name: DevMaxx-JK-KSU-${{ env.DEVICE }}-A11
           path: AnyKernel3-master/*.zip
