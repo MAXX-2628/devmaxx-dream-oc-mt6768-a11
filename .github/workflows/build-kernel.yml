@@ -22,7 +22,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: devmaxx-susfs-next
+          ref: shas-susfs-next
 
       - name: Install dependencies
         run: |
@@ -328,4 +328,5 @@ jobs:
         with:
           name: susfs-module-${{ env.DEVICE }}
           path: susfs-module-${{ env.DEVICE }}.zip
+
 
