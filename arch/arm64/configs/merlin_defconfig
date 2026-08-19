@@ -1,5 +1,5 @@
-CONFIG_CROSS_COMPILE="aarch64-linux-android-"
-CONFIG_LOCALVERSION="-shas-dream-merlin-a11-customrom-a11"
+﻿CONFIG_CROSS_COMPILE="aarch64-linux-android-"
+CONFIG_LOCALVERSION="-devmaxx-dream-merlin-a11-customrom-a11"
 # CONFIG_FHANDLE is not set
 CONFIG_IKHEADERS=y
 CONFIG_LOG_BUF_SHIFT=17
@@ -505,3 +505,4 @@ CONFIG_PSI=y
 CONFIG_CMA=y
 CONFIG_DMA_CMA=y
 CONFIG_CMA_SIZE_MBYTES=32
+
