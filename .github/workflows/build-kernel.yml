@@ -1,4 +1,4 @@
-name: Build Kernel with KernelSU
+﻿name: Build Kernel with KernelSU
 
 on:
   workflow_dispatch:
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: shas-susfs
+          ref: devmaxx-susfs
 
       - name: Install dependencies
         run: |
@@ -316,3 +316,4 @@ jobs:
         with:
           name: susfs-module-${{ env.DEVICE }}
           path: susfs-module-${{ env.DEVICE }}.zip
+
