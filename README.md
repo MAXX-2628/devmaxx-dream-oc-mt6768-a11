@@ -1,12 +1,12 @@
-<div align="center">
+﻿<div align="center">
 
-# 📱 shas-dream-oc-mt6768-a11 — NOC Kernel
+# 📱 devmaxx-dream-oc-mt6768-a11 — NOC Kernel
 
 ### by dev-maxx, for J💗K
 
 ### The Story of a Kernel That Wouldn't Let Us Have Root
 
-![Branch](https://img.shields.io/badge/branch-shas--noc-important)
+![Branch](https://img.shields.io/badge/branch-devmaxx--noc-important)
 ![Kernel](https://img.shields.io/badge/kernel-4.14.259-blue)
 ![Device](https://img.shields.io/badge/device-Redmi%209%20(lancelot)%20%2F%209T%20(merlin)-green)
 ![Android](https://img.shields.io/badge/Android-11%20(stock%20MIUI)-orange)
@@ -60,7 +60,7 @@ Scroll down for the **full story with every detail**, crash logs, and all the de
 
 | Component | Version | Why |
 |---|---|---|
-| Kernel source | `shas-noc` branch (base commit `6af5519f`) | Stock clocks, proven to boot stock MIUI |
+| Kernel source | `devmaxx-noc` branch (base commit `6af5519f`) | Stock clocks, proven to boot stock MIUI |
 | Root | **KernelSU v0.9.5** (`tiann/KernelSU` tag) | Last version that supports non-GKI (old-style) kernels |
 | Hook mode | **MANUAL hooks** (kprobes **OFF**!) | See "The Big Discovery" below â€” kprobes crash this kernel |
 | Compiler | **AOSP Clang 14** (`clang-r450784d`, android13-release) + LLD 14 | Matches the original known-good build |
@@ -271,7 +271,7 @@ The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/b
 4. Open the finished run â†’ **Artifacts** â†’ download
 
 **What the workflow does automatically:**
-- Checks out the `shas-noc` branch
+- Checks out the `devmaxx-noc` branch
 - Integrates **KernelSU v0.9.5** via `tiann/KernelSU/v0.9.5/kernel/setup.sh`
 - Appends to `<device>_defconfig`:
   ```text
@@ -285,8 +285,8 @@ The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/b
 ### ðŸ’» Local build (advanced, Ubuntu)
 
 ```bash
-git clone -b shas-noc https://github.com/MAXX-2628/shas-dream-oc-mt6768-a11
-cd shas-dream-oc-mt6768-a11
+git clone -b devmaxx-noc https://github.com/MAXX-2628/devmaxx-dream-oc-mt6768-a11
+cd devmaxx-dream-oc-mt6768-a11
 
 # 1) toolchains
 mkdir -p toolchains/{clang-llvm,gcc64-aosp,gcc32-aosp}
@@ -315,7 +315,7 @@ make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
 # 5) flashable zip
 cd AnyKernel3-master && rm -f *.zip *-dtb
 cp ../out/arch/arm64/boot/Image.gz-dtb Image.gz-dtb
-zip -r9 Shas-Dream-KSU-lancelot-A11-$(date +%Y%m%d-%H%M).zip .
+zip -r9 DevMaxx-JK-KSU-lancelot-A11-$(date +%Y%m%d-%H%M).zip .
 ```
 
 ---
@@ -379,7 +379,7 @@ Our 6th hook (`drivers/input/input.c`) is what enables this. And because we use 
 | `31371351178` | v0.9.5 + kprobes + KASLR off (`25dd7a03`) | ðŸ’¥ bootloop (`IABT`) |
 | **`31375278717`** | **v0.9.5 + MANUAL HOOKS, no kprobes (`bceb45eb`)** | âœ… **BOOTS + ROOT WORKS** |
 
-**Key commits on `shas-noc`:**
+**Key commits on `devmaxx-noc`:**
 - `d531e16b` / `7096b6cc` â€” permissive SELinux experiment (reverted)
 - `ab7117f2` â€” workflow with v0.9.5 + Proton Clang 14 (bad toolchain URL â€” failed)
 - `639b95a9` â€” fixed toolchain to AOSP Clang 14 (`clang-r450784d`)
@@ -398,10 +398,10 @@ Our 6th hook (`drivers/input/input.c`) is what enables this. And because we use 
 - Toolchains: AOSP Clang `clang-r450784d`, GCC 4.9 android-11 prebuilts
 - Crash logs: MediaTek `CONFIG_PSTORE_RAM` / `CONFIG_MTK_RAM_CONSOLE` (`/proc/last_kmsg`)
 
-## susfs (branch `shas-susfs` only)
+## susfs (branch `devmaxx-susfs` only)
 
 This branch adds [susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu) (branch
-`kernel-4.14`) on top of the proven `shas-noc` recipe above: KSU stays pinned
+`kernel-4.14`) on top of the proven `devmaxx-noc` recipe above: KSU stays pinned
 at **v0.9.5** with kprobes off and the same 6 manual hooks, plus SELinux
 domain-spoofing (zygote/init/ksu SID games), sus_path/sus_mount/sus_kstat
 hiding, and uname/cmdline spoofing.
@@ -426,7 +426,7 @@ uses those (never fetches patches from GitLab at build time):
 
 ### Installing
 
-1. Flash the kernel zip from this branch's CI artifact (`Shas-Dream-KSU-<device>-A11`) exactly like the `shas-noc` build - **unzip TWICE**, same as before.
+1. Flash the kernel zip from this branch's CI artifact (`DevMaxx-JK-KSU-<device>-A11`) exactly like the `devmaxx-noc` build - **unzip TWICE**, same as before.
 2. Flash the `susfs-module-<device>` artifact zip as a KernelSU module (KSU
    Manager -> Modules -> Install from storage), then reboot. This installs
    the `ksu_susfs` CLI tool and `service.sh` automation from
@@ -460,7 +460,7 @@ the full command list: `add_sus_path`, `add_sus_mount`,
 ### Safe mode still works
 
 Volume-Down x3 during boot still forces KSU safe mode (all root features off)
-exactly as on `shas-noc` - susfs doesn't touch that hook.
+exactly as on `devmaxx-noc` - susfs doesn't touch that hook.
 
 ### Rebranded manager (Device Sync)
 
