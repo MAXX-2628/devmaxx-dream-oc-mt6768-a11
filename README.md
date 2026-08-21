@@ -1,10 +1,10 @@
-<div align="center">
+﻿<div align="center">
 
-# ðŸ“± shas-dream-oc-mt6768-a11 â€” NOC Kernel
+# ðŸ“± devmaxx-dream-oc-mt6768-a11 â€” NOC Kernel
 
 ### The Story of a Kernel That Wouldn't Let Us Have Root
 
-![Branch](https://img.shields.io/badge/branch-shas--noc-important)
+![Branch](https://img.shields.io/badge/branch-devmaxx--noc-important)
 ![Kernel](https://img.shields.io/badge/kernel-4.14.259-blue)
 ![Device](https://img.shields.io/badge/device-Redmi%209%20(lancelot)%20%2F%209T%20(merlin)-green)
 ![Android](https://img.shields.io/badge/Android-11%20(stock%20MIUI)-orange)
@@ -58,7 +58,7 @@ Scroll down for the **full story with every detail**, crash logs, and all the de
 
 | Component | Version | Why |
 |---|---|---|
-| Kernel source | `shas-noc` branch (base commit `6af5519f`) | Stock clocks, proven to boot stock MIUI |
+| Kernel source | `devmaxx-noc` branch (base commit `6af5519f`) | Stock clocks, proven to boot stock MIUI |
 | Root | **KernelSU v0.9.5** (`tiann/KernelSU` tag) | Last version that supports non-GKI (old-style) kernels |
 | Hook mode | **MANUAL hooks** (kprobes **OFF**!) | See "The Big Discovery" below â€” kprobes crash this kernel |
 | Compiler | **AOSP Clang 14** (`clang-r450784d`, android13-release) + LLD 14 | Matches the original known-good build |
@@ -269,7 +269,7 @@ The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/b
 4. Open the finished run â†’ **Artifacts** â†’ download
 
 **What the workflow does automatically:**
-- Checks out the `shas-noc` branch
+- Checks out the `devmaxx-noc` branch
 - Integrates **KernelSU v0.9.5** via `tiann/KernelSU/v0.9.5/kernel/setup.sh`
 - Appends to `<device>_defconfig`:
   ```text
@@ -283,8 +283,8 @@ The repo has the workflow **"Build Kernel with KernelSU"** (`.github/workflows/b
 ### ðŸ’» Local build (advanced, Ubuntu)
 
 ```bash
-git clone -b shas-noc https://github.com/MAXX-2628/shas-dream-oc-mt6768-a11
-cd shas-dream-oc-mt6768-a11
+git clone -b devmaxx-noc https://github.com/MAXX-2628/devmaxx-dream-oc-mt6768-a11
+cd devmaxx-dream-oc-mt6768-a11
 
 # 1) toolchains
 mkdir -p toolchains/{clang-llvm,gcc64-aosp,gcc32-aosp}
@@ -313,7 +313,7 @@ make -j$(nproc --all) O=out ARCH=arm64 CC=clang \
 # 5) flashable zip
 cd AnyKernel3-master && rm -f *.zip *-dtb
 cp ../out/arch/arm64/boot/Image.gz-dtb Image.gz-dtb
-zip -r9 Shas-Dream-KSU-lancelot-A11-$(date +%Y%m%d-%H%M).zip .
+zip -r9 DevMaxx-JK-KSU-lancelot-A11-$(date +%Y%m%d-%H%M).zip .
 ```
 
 ---
@@ -377,7 +377,7 @@ Our 6th hook (`drivers/input/input.c`) is what enables this. And because we use 
 | `31371351178` | v0.9.5 + kprobes + KASLR off (`25dd7a03`) | ðŸ’¥ bootloop (`IABT`) |
 | **`31375278717`** | **v0.9.5 + MANUAL HOOKS, no kprobes (`bceb45eb`)** | âœ… **BOOTS + ROOT WORKS** |
 
-**Key commits on `shas-noc`:**
+**Key commits on `devmaxx-noc`:**
 - `d531e16b` / `7096b6cc` â€” permissive SELinux experiment (reverted)
 - `ab7117f2` â€” workflow with v0.9.5 + Proton Clang 14 (bad toolchain URL â€” failed)
 - `639b95a9` â€” fixed toolchain to AOSP Clang 14 (`clang-r450784d`)
