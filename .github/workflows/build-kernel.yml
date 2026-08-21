@@ -224,10 +224,19 @@ jobs:
             CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT=y \
             CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y \
             CONFIG_OVERLAY_FS=y \
+            CONFIG_BALANCE_ANON_FILE_RECLAIM=y \
           ; do
             grep -qx "$flag" out/.config || { echo "FATAL: $flag missing from generated .config"; exit 1; }
           done
           grep -q "^# CONFIG_KPROBES is not set" out/.config || { echo "FATAL: CONFIG_KPROBES is set (expected unset -- KPROBES is broken on this MTK 4.14 kernel)"; exit 1; }
+          # RAM-only reclaim is a project constraint: nothing may swap to eMMC.
+          # ZRAM_WRITEBACK also drags in ZRAM_LRU_WRITEBACK (default y), which
+          # writes idle zram pages out proactively. Guard against it returning
+          # via a Kconfig "select" or a future defconfig edit.
+          if grep -qx "CONFIG_ZRAM_WRITEBACK=y" out/.config; then
+            echo "FATAL: CONFIG_ZRAM_WRITEBACK=y is set (expected unset -- RAM-only reclaim, no storage-backed swap)"
+            exit 1
+          fi
           echo "All critical Kconfig flags verified present in out/.config"
 
       - name: Build kernel
