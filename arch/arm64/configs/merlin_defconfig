@@ -34,7 +34,14 @@ CONFIG_PREEMPT=y
 # CONFIG_BOUNCE is not set
 CONFIG_ZSMALLOC=y
 # CONFIG_DIRECT_RECLAIM_FILE_PAGES_ONLY is not set
-# CONFIG_BALANCE_ANON_FILE_RECLAIM is not set
+# BALANCE_ANON_FILE_RECLAIM (2026-08-21): mm/Kconfig has this "default y",
+# but this defconfig explicitly disabled it. With it off, reclaim prefers
+# evicting file-backed pages - the mmap'd dex/oat/.so and game assets - which
+# have no zram copy, so faulting them back in is an eMMC read, often mid-frame.
+# On, cold anonymous memory is compressed into zram (RAM) instead and the
+# executable working set stays resident. Depends on SWAP (zram), satisfied.
+# See SUSFS-HANDOFF.md 14.1.
+CONFIG_BALANCE_ANON_FILE_RECLAIM=y
 CONFIG_RANDOMIZE_BASE=y
 CONFIG_CMDLINE="console=tty0 console=ttyMT3,921600n1 root=/dev/ram vmalloc=496M slub_max_order=0 slub_debug=0 "
 # CONFIG_EFI is not set
@@ -86,7 +93,13 @@ CONFIG_CFG80211_DEVELOPER_WARNINGS=y
 # CONFIG_CFG80211_DEFAULT_PS is not set
 CONFIG_NFC=y
 CONFIG_ZRAM=y
-CONFIG_ZRAM_WRITEBACK=y
+# ZRAM_WRITEBACK deliberately OFF (2026-08-21): it writes idle/incompressible
+# zram pages out to a backing block device, and in this tree enabling it also
+# pulls in CONFIG_ZRAM_LRU_WRITEBACK (default y), which pushes idle pages out
+# proactively. Project constraint is RAM-only reclaim - nothing swaps to eMMC.
+# It was set twice in this file (once here, once next to CONFIG_RBIN); both
+# removed in favour of this single explicit disable. See SUSFS-HANDOFF.md 14.1.
+# CONFIG_ZRAM_WRITEBACK is not set
 CONFIG_BLK_DEV_LOOP_MIN_COUNT=16
 CONFIG_MEDIATEK_SOLUTION=y
 CONFIG_MTK_PLATFORM="mt6768"
@@ -434,7 +447,6 @@ CONFIG_MTK_SCHED_RQAVG_KS=y
 CONFIG_MTK_SCHED_RQAVG_US=y
 CONFIG_MTK_SCHED_CPULOAD=y
 CONFIG_RBIN=y
-CONFIG_ZRAM_WRITEBACK=y
 CONFIG_MTK_GBE=y
 CONFIG_MTK_LOAD_TRACKER=y
 CONFIG_MTK_CPU_CTRL_CFP=y
