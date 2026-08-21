@@ -22,7 +22,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: shas-noc
+          ref: devmaxx-noc
 
       - name: Install dependencies
         run: |
@@ -237,3 +237,4 @@ jobs:
         with:
           name: DevMaxx-JK-KSU-${{ env.DEVICE }}-A11
           path: AnyKernel3-master/*.zip
+
