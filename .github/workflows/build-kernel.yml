@@ -258,6 +258,34 @@ jobs:
             KSU_EXPECTED_SIZE=0x0374 \
             KSU_EXPECTED_HASH=96a902c4e19f34fa1bb857390a957980c921a8253a0a637addfabc95b0552d21
 
+      - name: Assert AnyKernel3 installer scripts are LF-only and BOM-free
+        run: |
+          AK=AnyKernel3-master
+          fail=0
+          for f in "$AK/anykernel.sh" "$AK/tools/ak3-core.sh" "$AK/META-INF/com/google/android/update-binary" "$AK/META-INF/com/google/android/updater-script"; do
+            if [ ! -f "$f" ]; then
+              echo "FATAL: missing installer script $f"
+              fail=1
+              continue
+            fi
+            if [ "$(head -c 3 "$f" | od -An -tx1 | tr -d ' \n')" = "efbbbf" ]; then
+              echo "FATAL: $f starts with a UTF-8 BOM -- busybox ash treats line 1 as a command instead of a comment"
+              fail=1
+            fi
+            n=$(tr -cd '\r' < "$f" | wc -c)
+            if [ "$n" -ne 0 ]; then
+              echo "FATAL: $f contains $n CR byte(s). busybox ash runs a bare CR as a command, fails with"
+              echo "       'line N: : not found' and exits 127; update-binary turns that into a silent"
+              echo "       'Updater process ended with ERROR: 1' with no reason shown on screen."
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "These files are edited from Windows -- see SUSFS-HANDOFF.md section 7 on encoding hazards."
+            exit 1
+          fi
+          echo "AnyKernel3 installer scripts: LF-only, no BOM -- OK"
+
       - name: Package AnyKernel3
         run: |
           IMAGE=out/arch/arm64/boot/Image.gz-dtb
