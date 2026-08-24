@@ -225,7 +225,6 @@ jobs:
             CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT=y \
             CONFIG_OVERLAY_FS=y \
             CONFIG_BALANCE_ANON_FILE_RECLAIM=y \
-            CONFIG_MTK_TASK_TURBO=y \
           ; do
             grep -qx "$flag" out/.config || { echo "FATAL: $flag missing from generated .config"; exit 1; }
           done
