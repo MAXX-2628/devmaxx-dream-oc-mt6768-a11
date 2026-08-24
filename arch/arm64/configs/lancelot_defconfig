@@ -448,16 +448,7 @@ CONFIG_MTK_PERF_OBSERVER=y
 # CONFIG_MTK_AEE_AED is not set
 # CONFIG_MTK_AEE_IPANIC is not set
 # CONFIG_MTK_AEE_HANG_DETECT is not set
-# MTK_TASK_TURBO (2026-08-22): off by default. Reduces stalls caused by
-# another process holding a lock the foreground app/game thread is
-# waiting on - self-contained driver (drivers/misc/mediatek/task_turbo/),
-# no interaction with the reclaim/memcg path that regressed battery/heat
-# in 13.5/13.7. FPSGO+GBE+touch/IO boost already cover per-frame CPU/GPU
-# scaling; this targets launch/lock latency, which they don't. See
-# SUSFS-HANDOFF.md 14.4 - CONFIG_MTK_EARA_THERMAL was considered and
-# rejected: traced its Makefile, confirmed it is never linked into this
-# device's build regardless of the Kconfig value.
-CONFIG_MTK_TASK_TURBO=y
+# CONFIG_MTK_TASK_TURBO is not set
 CONFIG_MTK_IO_BOOST=y
 CONFIG_DEVFREQ_BOOST=y
 CONFIG_DEVFREQ_GOV_PERFORMANCE=y
